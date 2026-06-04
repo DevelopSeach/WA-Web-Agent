@@ -1,0 +1,9 @@
+{
+  "name": "com.seach.wa_native_host",
+  "description": "Native host for WA Web Agent",
+  "path": "C:\\WAWebAgent\\native-host\\run-native-host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://REPLACE_EXTENSION_ID/"
+  ]
+}

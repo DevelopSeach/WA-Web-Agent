@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "WA Web Agent",
+  "version": "1.0.0",
+  "description": "WhatsApp Web listener and command agent for approved internal automation.",
+  "permissions": [
+    "storage",
+    "nativeMessaging",
+    "debugger",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "http://localhost:3001/*",
+    "https://*/"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["pageHook.js"],
+      "matches": ["https://web.whatsapp.com/*"]
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "WA Web Agent"
+  }
+}
