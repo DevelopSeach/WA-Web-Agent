@@ -11,7 +11,8 @@
   ],
   "host_permissions": [
     "https://web.whatsapp.com/*",
-    "http://localhost:3001/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
     "https://*/"
   ],
   "background": {
@@ -19,15 +20,23 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://web.whatsapp.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["pageHook.js"],
-      "matches": ["https://web.whatsapp.com/*"]
+      "resources": [
+        "pageHook.js"
+      ],
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ]
     }
   ],
   "options_page": "options.html",

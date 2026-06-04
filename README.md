@@ -80,7 +80,7 @@ Important keys:
 ```env
 NODE_ENV='production'
 APP_ENV='production'
-PORT='3001'
+PORT='your_assigned_port'
 CLIENT_DIST_DIR='client/dist'
 WEBHOOK_TOKEN='CHANGE_ME_SECRET'
 MYSQL_HOST='127.0.0.1'
@@ -174,7 +174,7 @@ chrome://extensions
 https://web.whatsapp.com
 ```
 
-6. Open the extension Options page and set:
+6. Open the extension Options page and set, if needed, custom overrides:
 
 ```text
 Webhook URL: https://your-domain.example/api/whatsapp-webhook
@@ -182,6 +182,8 @@ Command URL: https://your-domain.example/api/commands/next
 Command Result URL: https://your-domain.example/api/commands/result
 API Token: CHANGE_ME_SECRET
 ```
+
+The extension defaults are generated from the repo `.env` during install/update, so on Multidev the public URLs should already point at the installed domain.
 
 ---
 
@@ -225,7 +227,7 @@ After the production app is running, open the public domain and enter the `WEBHO
 ### Send text
 
 ```bash
-curl -X POST http://localhost:3001/api/commands \
+curl -X POST http://localhost:$PORT/api/commands \
   -H "Content-Type: application/json" \
   -H "x-api-token: CHANGE_ME_SECRET" \
   -d '{"action":"send_text","text":"שלום, זו הודעת בדיקה","enter":true}'
@@ -236,7 +238,7 @@ curl -X POST http://localhost:3001/api/commands \
 Windows path must exist on the machine where Chrome is running:
 
 ```bash
-curl -X POST http://localhost:3001/api/commands \
+curl -X POST http://localhost:$PORT/api/commands \
   -H "Content-Type: application/json" \
   -H "x-api-token: CHANGE_ME_SECRET" \
   -d '{"action":"paste_image","filePath":"C:\\\\WA_FILES\\\\image1.png","caption":"מצורפת תמונה","send":true}'
@@ -245,7 +247,7 @@ curl -X POST http://localhost:3001/api/commands \
 ### Click inside WhatsApp tab
 
 ```bash
-curl -X POST http://localhost:3001/api/commands \
+curl -X POST http://localhost:$PORT/api/commands \
   -H "Content-Type: application/json" \
   -H "x-api-token: CHANGE_ME_SECRET" \
   -d '{"action":"click","x":500,"y":800}'
@@ -254,7 +256,7 @@ curl -X POST http://localhost:3001/api/commands \
 ### Press key
 
 ```bash
-curl -X POST http://localhost:3001/api/commands \
+curl -X POST http://localhost:$PORT/api/commands \
   -H "Content-Type: application/json" \
   -H "x-api-token: CHANGE_ME_SECRET" \
   -d '{"action":"press_key","key":"Enter"}'

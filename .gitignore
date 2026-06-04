@@ -4,3 +4,4 @@ dist/
 .DS_Store
 *.log
 .codex/
+extension/runtime-config.json

@@ -15,3 +15,5 @@ npm run start
 ```
 
 The app reads its production port from `PORT` and serves both the API and built dashboard from the same process.
+
+The Chrome extension runtime config is generated from `.env` during install/update, so its webhook and command URLs follow the installed domain automatically.

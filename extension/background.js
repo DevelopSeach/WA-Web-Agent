@@ -1,16 +1,42 @@
 const DEFAULT_CONFIG = {
-  webhookUrl: "http://localhost:3001/api/whatsapp-webhook",
-  commandUrl: "http://localhost:3001/api/commands/next",
-  commandResultUrl: "http://localhost:3001/api/commands/result",
+  webhookUrl: "",
+  commandUrl: "",
+  commandResultUrl: "",
   apiToken: "CHANGE_ME_SECRET",
   enabled: true,
   pollCommands: true,
   pollSeconds: 3
 };
 
+async function loadRuntimeDefaults() {
+  try {
+    const res = await fetch(chrome.runtime.getURL("runtime-config.json"));
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+function mergeConfig(runtime = {}) {
+  return {
+    ...DEFAULT_CONFIG,
+    webhookUrl: runtime.webhookUrl || DEFAULT_CONFIG.webhookUrl,
+    commandUrl: runtime.commandUrl || DEFAULT_CONFIG.commandUrl,
+    commandResultUrl: runtime.commandResultUrl || DEFAULT_CONFIG.commandResultUrl,
+    apiToken: runtime.apiToken || DEFAULT_CONFIG.apiToken,
+    enabled: runtime.enabled !== false,
+    pollCommands: runtime.pollCommands !== false,
+    pollSeconds: Number(runtime.pollSeconds || DEFAULT_CONFIG.pollSeconds)
+  };
+}
+
+const runtimeDefaultsPromise = loadRuntimeDefaults().then(mergeConfig);
+
 chrome.runtime.onInstalled.addListener(async () => {
-  const existing = await chrome.storage.local.get(Object.keys(DEFAULT_CONFIG));
-  await chrome.storage.local.set({ ...DEFAULT_CONFIG, ...existing });
+  const defaults = await runtimeDefaultsPromise;
+  const existing = await chrome.storage.local.get(Object.keys(defaults));
+  await chrome.storage.local.set({ ...defaults, ...existing });
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -22,8 +48,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function config() {
-  const cfg = await chrome.storage.local.get(Object.keys(DEFAULT_CONFIG));
-  return { ...DEFAULT_CONFIG, ...cfg };
+  const defaults = await runtimeDefaultsPromise;
+  const cfg = await chrome.storage.local.get(Object.keys(defaults));
+  return { ...defaults, ...cfg };
 }
 
 async function getWhatsAppTab() {

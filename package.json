@@ -11,6 +11,9 @@
     "prod": "npm run start",
     "db:init": "node server/init-db.js",
     "db:migrate": "npm run db:init",
-    "db:seed": "node server/seed-db.js"
+    "db:seed": "node server/seed-db.js",
+    "postinstall": "node scripts/render-extension-config.mjs",
+    "prebuild": "node scripts/render-extension-config.mjs",
+    "prestart": "node scripts/render-extension-config.mjs"
   }
 }
