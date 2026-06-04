@@ -16,4 +16,6 @@ npm run start
 
 The app reads its production port from `PORT` and serves both the API and built dashboard from the same process.
 
+For Multidev installs, `db:init` uses the DB machine root credentials from `.env.machine` to create the application DB user and grants before `db:seed` runs.
+
 The Chrome extension runtime config is generated from `.env` during install/update, so its webhook and command URLs follow the installed domain automatically.
