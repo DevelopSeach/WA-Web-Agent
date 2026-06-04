@@ -29,61 +29,123 @@ wa-web-agent/
 ├─ native-host/      Windows PowerShell Native Messaging host
 ├─ server/           Node.js API server
 ├─ client/           React dashboard
-└─ sql/              MySQL schema
+├─ sql/              MySQL schema
+├─ .env.example
+├─ .env.production.example
+└─ package.json      Root install/build/start entry points
 ```
 
 ---
 
-## 1. MySQL setup
+## 1. Production install from repo root
+
+The canonical Multidev-compatible flow is:
 
 ```bash
-mysql -u root -p < sql/schema.sql
+cp .env.production.example .env
+npm run install:all
+npm run db:init
+npm run db:seed
+npm run build
+npm run start
 ```
 
-Or from server folder:
+Root scripts exposed for install automation:
 
-```bash
-cd server
-cp .env.example .env
-npm install
-npm run init-db
-```
+- `npm run install:all`
+- `npm run build`
+- `npm run start`
+- `npm run dev`
+- `npm run prod`
+- `npm run db:init`
+- `npm run db:migrate`
+- `npm run db:seed`
+- `pm2 start ecosystem.config.js`
 
-Edit `server/.env`:
+Production runtime behavior:
+
+- The Node server listens on `PORT`
+- The React dashboard is built into `client/dist`
+- The server serves the dashboard and API from the same process
+- The dashboard uses a same-origin API path by default, so production builds do not point at `localhost`
+
+---
+
+## 2. Environment
+
+Create a root `.env` from either `.env.example` or `.env.production.example`.
+
+Important keys:
 
 ```env
-PORT=3001
-MYSQL_HOST=127.0.0.1
-MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=your_password
-MYSQL_DATABASE=wa_logger
-WEBHOOK_TOKEN=CHANGE_ME_SECRET
+NODE_ENV='production'
+APP_ENV='production'
+PORT='3001'
+CLIENT_DIST_DIR='client/dist'
+WEBHOOK_TOKEN='CHANGE_ME_SECRET'
+MYSQL_HOST='127.0.0.1'
+MYSQL_PORT='3306'
+MYSQL_USER='wa_web_agent'
+MYSQL_PASSWORD='your_password'
+MYSQL_DATABASE='wa_logger'
 ```
+
+Notes:
+
+- Quote values in shell-sourced env files
+- `PORT` is the only public runtime port required by the web app
+- `MYSQL_DATABASE` is respected by `db:init`, `db:migrate`, and runtime queries
 
 ---
 
-## 2. Run server
+## 3. MySQL setup
 
 ```bash
-cd server
-npm install
-npm run dev
+npm run db:init
+```
+
+`db:init` is idempotent and will:
+
+- create the configured database if it does not exist
+- create the required tables
+- use the database name from `MYSQL_DATABASE`
+
+`db:seed` is safe to rerun. It currently inserts a single idempotent verification command row so install automation can confirm DB write access.
+
+---
+
+## 4. Run server
+
+```bash
+npm run start
 ```
 
 Health test:
 
 ```bash
-curl http://localhost:3001/api/health
+curl http://localhost:$PORT/api/health
 ```
 
 ---
 
-## 3. Run dashboard
+## 5. Local development
+
+```bash
+cp .env.example .env
+npm run install:all
+```
+
+Server:
+
+```bash
+cd server
+npm run dev
+```
+
+Dashboard:
 
 ```bash
 cd client
-npm install
 npm run dev
 ```
 
@@ -95,7 +157,7 @@ http://localhost:5173
 
 ---
 
-## 4. Install Chrome Extension
+## 6. Install Chrome Extension
 
 1. Open Chrome:
 
@@ -115,15 +177,15 @@ https://web.whatsapp.com
 6. Open the extension Options page and set:
 
 ```text
-Webhook URL: http://localhost:3001/api/whatsapp-webhook
-Command URL: http://localhost:3001/api/commands/next
-Command Result URL: http://localhost:3001/api/commands/result
+Webhook URL: https://your-domain.example/api/whatsapp-webhook
+Command URL: https://your-domain.example/api/commands/next
+Command Result URL: https://your-domain.example/api/commands/result
 API Token: CHANGE_ME_SECRET
 ```
 
 ---
 
-## 5. Install Windows Native Host
+## 7. Install Windows Native Host
 
 The Native Host is needed for OS-level actions such as pasting an image/file from a Windows path.
 
@@ -152,7 +214,13 @@ Restart Chrome after installation.
 
 ---
 
-## 6. Create commands manually
+## 8. Dashboard usage
+
+After the production app is running, open the public domain and enter the `WEBHOOK_TOKEN` into the dashboard's `API Token` field. The dashboard stores it in browser local storage and uses it for protected command endpoints.
+
+---
+
+## 9. Create commands manually
 
 ### Send text
 
@@ -194,7 +262,7 @@ curl -X POST http://localhost:3001/api/commands \
 
 ---
 
-## 7. Notes and limits
+## 10. Notes and limits
 
 - WhatsApp Web has no official browser-side API for group scraping. This is DOM observation and can break when WhatsApp changes the UI.
 - Full media download is not guaranteed. The extension logs what the browser exposes: thumbnails, blob URLs, links, metadata, etc.
@@ -204,7 +272,7 @@ curl -X POST http://localhost:3001/api/commands \
 
 ---
 
-## 8. Suggested next improvements
+## 11. Suggested next improvements
 
 - Add command target chat search/opening.
 - Add command retry and timeout.

@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { pool } from "./db.js";
 
 dotenv.config();
@@ -8,6 +11,10 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const clientDistDir = path.resolve(__dirname, "..", process.env.CLIENT_DIST_DIR || "client/dist");
 
 function requireToken(req, res, next) {
   const expected = process.env.WEBHOOK_TOKEN;
@@ -150,6 +157,14 @@ app.post("/api/commands/result", requireToken, async (req, res) => {
 
   res.json({ ok: true });
 });
+
+if (fs.existsSync(clientDistDir)) {
+  app.use(express.static(clientDistDir));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api/")) return next();
+    res.sendFile(path.join(clientDistDir, "index.html"));
+  });
+}
 
 const port = Number(process.env.PORT || 3001);
 app.listen(port, () => console.log(`WA Web Agent API running on http://localhost:${port}`));

@@ -1,0 +1,16 @@
+{
+  "name": "wa-web-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "build": "npm --prefix client run build",
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "prod": "npm run start",
+    "db:init": "node server/init-db.js",
+    "db:migrate": "npm run db:init",
+    "db:seed": "node server/seed-db.js"
+  }
+}

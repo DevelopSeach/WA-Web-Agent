@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
 
-const API_BASE = "http://localhost:3001";
-const API_TOKEN = "CHANGE_ME_SECRET";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "/").replace(/\/$/, "");
 
 export default function App() {
   const [messages, setMessages] = useState([]);
   const [commands, setCommands] = useState([]);
   const [chatFilter, setChatFilter] = useState("");
+  const [apiToken, setApiToken] = useState(() => window.localStorage.getItem("wa-web-agent-api-token") || "");
   const [text, setText] = useState("שלום, זו הודעת בדיקה");
   const [imagePath, setImagePath] = useState("C:\\WA_FILES\\image1.png");
   const [caption, setCaption] = useState("מצורפת תמונה");
@@ -18,14 +18,14 @@ export default function App() {
     const m = await fetch(msgUrl).then((r) => r.json());
     setMessages(m.messages || []);
 
-    const c = await fetch(`${API_BASE}/api/commands`, { headers: { "x-api-token": API_TOKEN } }).then((r) => r.json());
+    const c = await fetch(`${API_BASE}/api/commands`, { headers: { "x-api-token": apiToken } }).then((r) => r.json());
     setCommands(c.commands || []);
   }
 
   async function createCommand(command) {
     await fetch(`${API_BASE}/api/commands`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-token": API_TOKEN },
+      headers: { "Content-Type": "application/json", "x-api-token": apiToken },
       body: JSON.stringify(command)
     });
     await load();
@@ -35,7 +35,12 @@ export default function App() {
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [apiToken]);
+
+  function updateApiToken(value) {
+    setApiToken(value);
+    window.localStorage.setItem("wa-web-agent-api-token", value);
+  }
 
   return (
     <div style={styles.page}>
@@ -44,6 +49,8 @@ export default function App() {
       <section style={styles.panel}>
         <h2>שליחת פקודות ל־WhatsApp Web</h2>
         <div style={styles.grid}>
+          <label>API Token</label>
+          <input value={apiToken} onChange={(e) => updateApiToken(e.target.value)} style={styles.input} />
           <label>טקסט לשליחה</label>
           <textarea value={text} onChange={(e) => setText(e.target.value)} style={styles.textarea} />
           <button style={styles.button} onClick={() => createCommand({ action: "send_text", text })}>שלח טקסט</button>
