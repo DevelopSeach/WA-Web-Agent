@@ -140,6 +140,14 @@ async function sendContentCommand(tabId, command) {
   return await chrome.tabs.sendMessage(tabId, { type: "WA_CONTENT_COMMAND", command });
 }
 
+async function captureRecentMessages(tabId, iterations = 5, waitMs = 400) {
+  try {
+    return await sendContentCommand(tabId, { action: "capture_recent_messages", iterations, waitMs });
+  } catch {
+    return { ok: false };
+  }
+}
+
 async function openChatByPhone(tabId, phone) {
   const normalizedPhone = normalizePhone(phone);
   const params = new URLSearchParams({ phone: normalizedPhone });
@@ -197,6 +205,8 @@ async function executeCommand(command) {
       await sendContentCommand(tabId, { action: "focus_message_box" });
       await insertText(tabId, command.text || "");
       if (command.enter !== false) await pressKey(tabId, "Enter");
+      await sleep(1200);
+      await captureRecentMessages(tabId);
       return { ok: true };
 
     case "open_chat":
@@ -216,6 +226,8 @@ async function executeCommand(command) {
       if (command.send !== false) {
         await pressKey(tabId, "Enter");
       }
+      await sleep(1200);
+      await captureRecentMessages(tabId);
       return { ok: true, phone: normalizePhone(command.phone) };
 
     case "send_text_to_archived_phone": {
@@ -226,6 +238,8 @@ async function executeCommand(command) {
       if (command.send !== false) {
         await pressKey(tabId, "Enter");
       }
+      await sleep(1200);
+      await captureRecentMessages(tabId);
       const unarchiveResult = command.makeVisible === true ? await tryUnarchiveCurrentChat(tabId) : null;
       return { ok: true, phone: normalizePhone(command.phone), unarchive: unarchiveResult };
     }
@@ -238,6 +252,8 @@ async function executeCommand(command) {
       if (command.send !== false) {
         await pressKey(tabId, "Enter");
       }
+      await sleep(1200);
+      await captureRecentMessages(tabId);
       return { ok: true, chat_name: command.chatName || command.groupName || "" };
 
     case "send_text_to_archived_group": {
@@ -248,6 +264,8 @@ async function executeCommand(command) {
       if (command.send !== false) {
         await pressKey(tabId, "Enter");
       }
+      await sleep(1200);
+      await captureRecentMessages(tabId);
       const unarchiveResult = command.makeVisible === true ? await tryUnarchiveCurrentChat(tabId) : null;
       return {
         ok: true,

@@ -342,21 +342,35 @@
   }
 
   function findSearchBox() {
-    const selectors = [
-      "div[contenteditable='true'][role='textbox'][data-tab='3']",
-      "div[contenteditable='true'][role='textbox'][title]",
-      "div[contenteditable='true'][role='textbox']"
-    ];
+    const candidates = [...document.querySelectorAll("div[contenteditable='true'][role='textbox']")];
+    if (!candidates.length) return null;
 
-    for (const selector of selectors) {
-      const node = [...document.querySelectorAll(selector)].find((candidate) => {
-        const title = cleanText(candidate.getAttribute("title") || candidate.getAttribute("aria-label") || "");
-        return title.includes("Search") || title.includes("חיפוש") || title.includes("Search input") || selector === "div[contenteditable='true'][role='textbox'][data-tab='3']";
-      });
-      if (node) return node;
-    }
+    const sidebar = document.querySelector("#side");
+    const isSearchCandidate = (node) => {
+      if (!node || node.closest("footer")) return false;
 
-    return null;
+      const text = cleanText([
+        node.getAttribute("title"),
+        node.getAttribute("aria-label"),
+        node.getAttribute("data-testid"),
+        node.getAttribute("data-lexical-editor"),
+        node.textContent
+      ].join(" "));
+      const lower = text.toLowerCase();
+
+      if (lower.includes("search") || lower.includes("חיפוש") || lower.includes("find")) return true;
+      if (sidebar && sidebar.contains(node)) return true;
+      return false;
+    };
+
+    const preferred = candidates.find((node) => {
+      if (!isSearchCandidate(node)) return false;
+      if (sidebar && !sidebar.contains(node)) return false;
+      return true;
+    });
+    if (preferred) return preferred;
+
+    return candidates.find(isSearchCandidate) || null;
   }
 
   function findArchiveEntry() {
@@ -390,7 +404,9 @@
     return [
       ...document.querySelectorAll("[role='gridcell']"),
       ...document.querySelectorAll("[role='listitem']"),
-      ...document.querySelectorAll("div[data-testid*='cell-frame']")
+      ...document.querySelectorAll("div[data-testid*='cell-frame']"),
+      ...document.querySelectorAll("div[data-testid*='chat-list-item']"),
+      ...document.querySelectorAll("div[data-testid*='cell-frame-container']")
     ];
   }
 
@@ -402,7 +418,13 @@
       return text === normalizedChatName || text.split("\n")[0] === normalizedChatName;
     });
     if (exact) return exact;
-    return candidates.find((node) => cleanText(node.innerText).toLowerCase().includes(normalizedChatName)) || null;
+    const partial = candidates.find((node) => cleanText(node.innerText).toLowerCase().includes(normalizedChatName));
+    if (partial) return partial;
+
+    const titleNode = [...document.querySelectorAll("span[title], div[title]")].find((node) => {
+      return cleanText(node.getAttribute("title") || node.textContent).toLowerCase() === normalizedChatName;
+    });
+    return titleNode?.closest("[role='gridcell'], [role='listitem'], div[data-testid*='cell-frame'], div[data-testid*='chat-list-item']") || null;
   }
 
   async function openArchiveView() {
@@ -437,6 +459,14 @@
     row.click();
     await wait(1200);
     return { ok: true, chat_title: getCurrentChatTitle(), searched: normalizedChatName, archived: includeArchived };
+  }
+
+  async function captureRecentMessages(iterations = 5, waitMs = 400) {
+    for (let index = 0; index < iterations; index += 1) {
+      scan(document.body);
+      await wait(waitMs);
+    }
+    return { ok: true };
   }
 
   async function tryUnarchiveCurrentChat() {
@@ -498,6 +528,13 @@
 
       if (message.command?.action === "open_chat_by_name") {
         openChatByNameFlow(message.command.chatName || "", message.command.includeArchived === true)
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+        return true;
+      }
+
+      if (message.command?.action === "capture_recent_messages") {
+        captureRecentMessages(Number(message.command.iterations) || 5, Number(message.command.waitMs) || 400)
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
         return true;
