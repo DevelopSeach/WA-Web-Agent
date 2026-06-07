@@ -152,12 +152,44 @@
   }
 
   function detectDirection(el) {
+    if (extractAck(el)?.code) return "outgoing";
     if (el.closest(".message-in")) return "incoming";
     if (el.closest(".message-out")) return "outgoing";
     const classes = String(el.className || "");
     if (classes.includes("message-in")) return "incoming";
     if (classes.includes("message-out")) return "outgoing";
+    const attrs = cleanText([
+      el.getAttribute?.("data-testid"),
+      el.getAttribute?.("aria-label"),
+      el.getAttribute?.("class")
+    ].join(" ")).toLowerCase();
+    if (attrs.includes("out") || attrs.includes("sent")) return "outgoing";
+    if (attrs.includes("in") || attrs.includes("received")) return "incoming";
     return "unknown";
+  }
+
+  function findMessageElement(el) {
+    if (!el || !el.closest) return null;
+    return el.closest("[data-id]")
+      || el.closest("[data-pre-plain-text]")
+      || el.closest(".copyable-text")
+      || el;
+  }
+
+  function buildSyntheticUid(messageEl, prePlainText, text, direction) {
+    const base = [
+      cleanText(prePlainText),
+      cleanText(text),
+      cleanText(direction),
+      cleanText(getCurrentChatTitle())
+    ].join("|");
+    if (!base.replace(/\|/g, "").trim()) return "";
+    let hash = 0;
+    for (let index = 0; index < base.length; index += 1) {
+      hash = ((hash << 5) - hash) + base.charCodeAt(index);
+      hash |= 0;
+    }
+    return `synthetic-${Math.abs(hash)}`;
   }
 
   function extractMedia(el) {
@@ -274,17 +306,22 @@
   }
 
   function extractMessage(el) {
-    const messageEl = el.closest("[data-id]") || el;
+    const messageEl = findMessageElement(el);
     if (!messageEl || !messageEl.getAttribute) return null;
-    const uid = messageEl.getAttribute("data-id");
-    if (!uid || seen.has(uid)) return null;
 
     const copyable = messageEl.querySelector("[data-pre-plain-text]");
     const prePlainText = copyable ? copyable.getAttribute("data-pre-plain-text") : "";
     const parsed = parsePrePlainText(prePlainText);
     const textNode = messageEl.querySelector(".copyable-text") || messageEl;
+    const rawText = cleanText(textNode.innerText || textNode.textContent || "");
     const direction = detectDirection(messageEl);
-    if (direction === "unknown") return null;
+    const inferredDirection = direction === "unknown"
+      ? (parsed.sender ? "incoming" : "unknown")
+      : direction;
+    const uid = messageEl.getAttribute("data-id") || buildSyntheticUid(messageEl, prePlainText, rawText, inferredDirection);
+    if (!uid || seen.has(uid)) return null;
+    if (!rawText && !prePlainText && !messageEl.querySelector("img, video, audio, a[href]")) return null;
+
     const targetType = detectTargetType();
     const senderPhone = extractSenderPhone(messageEl, parsed.sender, prePlainText);
     const extractedTargetName = extractTargetName();
@@ -296,17 +333,17 @@
       uid,
       chat_title: getCurrentChatTitle(),
       target_name: targetType === "direct"
-        ? (extractedTargetName || (direction === "incoming" ? parsed.sender : ""))
+        ? (extractedTargetName || (inferredDirection === "incoming" ? parsed.sender : ""))
         : (extractedTargetName || getCurrentChatTitle()),
       target_phone: targetType === "direct"
-        ? (extractedTargetPhone || (direction === "incoming" ? senderPhone : null))
+        ? (extractedTargetPhone || (inferredDirection === "incoming" ? senderPhone : null))
         : extractedTargetPhone,
       target_type: targetType,
       sender: parsed.sender,
       sender_phone: senderPhone,
       sent_at_text: parsed.sent_at_text,
-      direction,
-      text: cleanText(textNode.innerText),
+      direction: inferredDirection,
+      text: rawText,
       ack: extractAck(messageEl),
       reply_to: extractReplyContext(messageEl),
       media: extractMedia(messageEl),
@@ -321,8 +358,10 @@
 
   function scan(root) {
     const nodes = [];
-    if (root?.matches?.("[data-id]")) nodes.push(root);
-    if (root?.querySelectorAll) root.querySelectorAll("[data-id]").forEach((n) => nodes.push(n));
+    if (root?.matches?.("[data-id], [data-pre-plain-text], .copyable-text")) nodes.push(root);
+    if (root?.querySelectorAll) {
+      root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text").forEach((n) => nodes.push(n));
+    }
     nodes.forEach((node) => {
       const msg = extractMessage(node);
       if (msg) sendToBackground(msg);
@@ -579,7 +618,10 @@
     while (Date.now() - startedAt < timeoutMs) {
       const nodes = [
         ...document.querySelectorAll(".message-out[data-id]"),
-        ...document.querySelectorAll(".message-out [data-id]")
+        ...document.querySelectorAll(".message-out [data-id]"),
+        ...document.querySelectorAll(".message-out [data-pre-plain-text]"),
+        ...document.querySelectorAll("[data-pre-plain-text]"),
+        ...document.querySelectorAll(".copyable-text")
       ];
 
       for (const node of nodes.reverse()) {
