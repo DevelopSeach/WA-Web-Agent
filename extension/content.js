@@ -106,7 +106,20 @@
     if (text === "…" || text === "...") return true;
     if (text === titleText) return true;
     if (joined && text === joined) return true;
+    if (isMostlyNumeric(titleText) && isMostlyNumeric(text) && text.length <= 2) return true;
     return false;
+  }
+
+  function extractSidebarPhone(title, allText) {
+    const titlePhone = normalizePhoneCandidate(title);
+    if (titlePhone && titlePhone.length >= 8) return titlePhone;
+
+    const candidates = String(allText || "").match(/(?:\+\d[\d\s\-().]{6,}\d|\d{8,15})/g) || [];
+    for (const candidate of candidates) {
+      const normalized = normalizePhoneCandidate(candidate);
+      if (normalized && normalized.length >= 8) return normalized;
+    }
+    return null;
   }
 
   function splitTrailingTime(value) {
@@ -580,7 +593,7 @@
 
     const snippetCandidate = singleLineMeta?.body || cleanedLines[cleanedLines.length - 1] || "";
     const meta = inferMessageMetaFromText(snippetCandidate || allText);
-    const rowPhone = extractPhoneCandidates(allText)[0] || null;
+    const rowPhone = extractSidebarPhone(title, allText);
 
     const fallbackBody = stripUnreadNoise(
       cleanedLines.find((line) => line !== title && !isTypingValue(line)) || ""
@@ -592,8 +605,7 @@
     if (!uid || seen.has(uid)) return null;
 
     const isGroup = /,/.test(title) || /group|קבוצה/i.test(allText);
-    const normalizedTitlePhone = normalizePhoneCandidate(title);
-    const resolvedPhone = rowPhone || normalizedTitlePhone || null;
+    const resolvedPhone = rowPhone || null;
     const record = {
       event_type: "message",
       source: "whatsapp_web_extension_sidebar",
