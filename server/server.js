@@ -68,6 +68,63 @@ function chooseBestName(candidates) {
   }) || null;
 }
 
+function isNoisyMessageText(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return true;
+  if ([
+    "online",
+    "business account"
+  ].includes(text)) return true;
+
+  return [
+    "updates in status",
+    "channels",
+    "communities",
+    "last seen today",
+    "last seen ",
+    "messages and calls are end-to-end encrypted",
+    "click here for contact info",
+    "click here for group info",
+    "changed this group's icon",
+    "invite to group via link",
+    "add members",
+    "add description",
+    "created today by",
+    "this message was deleted",
+    "uses a default timer for disappearing messages",
+    "new messages will disappear from this chat"
+  ].some((needle) => text.includes(needle));
+}
+
+function isMalformedSidebarRow(row) {
+  const raw = parseJsonMaybe(row.raw_json);
+  if (String(row.source || raw.source || "") !== "whatsapp_web_extension_sidebar") return false;
+
+  const title = String(row.chat_title || raw.chat_title || "").trim();
+  const sender = String(row.sender || raw.sender || "").trim();
+  const text = String(row.message_text || raw.text || "").trim();
+
+  if (!title && !sender) return true;
+  if (isNoisyMessageText(text)) return true;
+  if (title && text && title === text) return true;
+  if (sender && text && sender === text) return true;
+  if (!sender && text.startsWith("\"")) return true;
+  return false;
+}
+
+function shouldExposeRow(row) {
+  if (String(row.event_type || "") !== "message") return true;
+  const raw = parseJsonMaybe(row.raw_json);
+  const title = String(row.chat_title || raw.chat_title || "").trim();
+  const targetName = String(raw.target_name || "").trim();
+  const text = String(row.message_text || raw.text || "").trim();
+
+  if (isNoisyMessageText(text)) return false;
+  if (isGenericDisplayName(title) || isGenericDisplayName(targetName)) return false;
+  if (isMalformedSidebarRow(row)) return false;
+  return true;
+}
+
 async function enrichRowsWithResolvedNames(rows) {
   const needPhones = new Set();
   const enrichedRows = rows.map((row) => {
@@ -220,6 +277,7 @@ app.get("/api/messages", async (req, res) => {
   }
 
   rows = await enrichRowsWithResolvedNames(rows);
+  rows = rows.filter(shouldExposeRow);
   res.json({ ok: true, count: rows.length, messages: rows });
 });
 
@@ -249,6 +307,7 @@ app.get("/api/messages/export", requireToken, async (req, res) => {
   }
 
   rows = await enrichRowsWithResolvedNames(rows);
+  rows = rows.filter(shouldExposeRow);
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename=\"wa-messages-${timestamp}.json\"`);

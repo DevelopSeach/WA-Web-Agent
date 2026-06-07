@@ -3,6 +3,7 @@
   window.__waAgentContentInstalled = true;
 
   const seen = new Set();
+  const resolvingIdentity = new Set();
   let periodicScanHandle = null;
 
   injectPageHook();
@@ -775,6 +776,10 @@
       if (!seen.has(msg.uid)) {
         seen.add(msg.uid);
         sendToBackground(msg);
+        if (msg.target_type === "direct" && normalizePhoneCandidate(msg.sender || msg.chat_title) && !isSavedContactName(msg.sender)) {
+          const matchedRow = collectSidebarRows().find((row) => cleanText(row.innerText || row.textContent || "").includes(cleanText(msg.chat_title || msg.sender || "")));
+          if (matchedRow) resolveSidebarMessageIdentity(matchedRow, msg);
+        }
       }
     });
   }
@@ -984,6 +989,110 @@
     target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     return true;
+  }
+
+  function findHeaderInfoTrigger() {
+    const header = document.querySelector("header");
+    if (!header) return null;
+    const candidates = [
+      ...header.querySelectorAll("[role='button']"),
+      ...header.querySelectorAll("[title]"),
+      ...header.querySelectorAll("[aria-label]"),
+      header
+    ];
+    return candidates.find((node) => {
+      const text = cleanText(`${node.innerText || ""} ${node.getAttribute?.("title") || ""} ${node.getAttribute?.("aria-label") || ""}`).toLowerCase();
+      return !text.includes("search") && !text.includes("חיפוש");
+    }) || header;
+  }
+
+  function findProfilePanel() {
+    const panels = [
+      ...document.querySelectorAll("[role='dialog']"),
+      ...document.querySelectorAll("[data-testid*='drawer']"),
+      ...document.querySelectorAll("[data-testid*='panel']"),
+      ...document.querySelectorAll("aside")
+    ];
+
+    return panels.find((panel) => {
+      const text = cleanText(panel.innerText || "").toLowerCase();
+      return text.length > 0 && (
+        text.includes("contact info") ||
+        text.includes("group info") ||
+        text.includes("business account") ||
+        text.includes("media, links, and docs") ||
+        text.includes("about") ||
+        text.includes("mute notifications")
+      );
+    }) || null;
+  }
+
+  function extractResolvedProfile(panel) {
+    if (!panel) return { name: "", phone: "" };
+    const candidates = [
+      ...panel.querySelectorAll("span[title]"),
+      ...panel.querySelectorAll("[title]"),
+      ...panel.querySelectorAll("[aria-label]"),
+      ...panel.querySelectorAll("h1, h2, h3")
+    ].map((node) => cleanText(node.getAttribute?.("title") || node.getAttribute?.("aria-label") || node.textContent || "")).filter(Boolean);
+
+    const name = candidates.find((value) => isSavedContactName(value)) || "";
+    const phone = candidates.map((value) => normalizePhoneCandidate(value)).find(Boolean) || normalizePhoneCandidate(panel.innerText || "") || "";
+    return { name, phone };
+  }
+
+  async function closeProfilePanel() {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
+    await wait(250);
+  }
+
+  async function resolveCurrentChatProfile() {
+    const trigger = findHeaderInfoTrigger();
+    if (!trigger) return { ok: false, error: "Header info trigger not found" };
+    clickNode(trigger);
+
+    const startedAt = Date.now();
+    let panel = findProfilePanel();
+    while (!panel && Date.now() - startedAt < 5000) {
+      await wait(250);
+      panel = findProfilePanel();
+    }
+    if (!panel) return { ok: false, error: "Profile panel not found" };
+
+    const resolved = extractResolvedProfile(panel);
+    await closeProfilePanel();
+    if (!resolved.name && !resolved.phone) return { ok: false, error: "Profile identity not found" };
+    return { ok: true, ...resolved };
+  }
+
+  async function resolveSidebarMessageIdentity(row, msg) {
+    const phone = normalizePhoneCandidate(msg.sender_phone || msg.sender || msg.chat_title);
+    if (!phone || resolvingIdentity.has(msg.uid)) return;
+
+    resolvingIdentity.add(msg.uid);
+    try {
+      clickNode(row);
+      await wait(1200);
+      const resolved = await resolveCurrentChatProfile();
+      if (!resolved?.ok || !isSavedContactName(resolved.name)) return;
+
+      sendToBackground({
+        ...msg,
+        chat_title: resolved.name,
+        target_name: resolved.name,
+        target_phone: normalizePhoneCandidate(resolved.phone || phone) || phone,
+        target_key: normalizePhoneCandidate(resolved.phone || phone) || phone,
+        sender: resolved.name,
+        sender_phone: normalizePhoneCandidate(resolved.phone || phone) || phone,
+        sender_key: normalizePhoneCandidate(resolved.phone || phone) || phone,
+        sender_resolved_name: resolved.name,
+        target_resolved_name: resolved.name
+      });
+    } catch {}
+    finally {
+      resolvingIdentity.delete(msg.uid);
+    }
   }
 
   async function openArchiveView() {
