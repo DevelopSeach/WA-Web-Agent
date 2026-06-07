@@ -342,7 +342,13 @@
   }
 
   function findSearchBox() {
-    const candidates = [...document.querySelectorAll("div[contenteditable='true'][role='textbox']")];
+    const candidates = [
+      ...document.querySelectorAll("div[contenteditable='true'][role='textbox']"),
+      ...document.querySelectorAll("div[contenteditable='true']"),
+      ...document.querySelectorAll("input[type='text']"),
+      ...document.querySelectorAll("input"),
+      ...document.querySelectorAll("textarea")
+    ];
     if (!candidates.length) return null;
 
     const sidebar = document.querySelector("#side");
@@ -352,6 +358,8 @@
       const text = cleanText([
         node.getAttribute("title"),
         node.getAttribute("aria-label"),
+        node.getAttribute("placeholder"),
+        node.getAttribute("type"),
         node.getAttribute("data-testid"),
         node.getAttribute("data-lexical-editor"),
         node.textContent
@@ -373,6 +381,26 @@
     return candidates.find(isSearchCandidate) || null;
   }
 
+  function findSearchTrigger() {
+    const nodes = [
+      ...document.querySelectorAll("[role='button']"),
+      ...document.querySelectorAll("button"),
+      ...document.querySelectorAll("[aria-label]"),
+      ...document.querySelectorAll("[title]")
+    ];
+
+    return nodes.find((node) => {
+      if (node.closest("footer")) return false;
+      const text = cleanText([
+        node.innerText,
+        node.getAttribute("aria-label"),
+        node.getAttribute("title"),
+        node.getAttribute("data-testid")
+      ].join(" ")).toLowerCase();
+      return text.includes("search") || text.includes("חיפוש") || text.includes("find chat");
+    }) || null;
+  }
+
   function findArchiveEntry() {
     const nodes = [
       ...document.querySelectorAll("[role='button']"),
@@ -388,15 +416,28 @@
     }) || null;
   }
 
-  async function typeIntoContentEditable(node, value) {
+  async function typeIntoEditable(node, value) {
     node.focus();
-    document.execCommand("selectAll", false, null);
-    document.execCommand("delete", false, null);
-    node.textContent = "";
-    const eventOptions = { bubbles: true };
-    node.dispatchEvent(new InputEvent("beforeinput", { data: value, inputType: "insertText", ...eventOptions }));
-    document.execCommand("insertText", false, value);
-    node.dispatchEvent(new Event("input", eventOptions));
+    if (typeof node.select === "function") {
+      node.select();
+    } else {
+      document.execCommand("selectAll", false, null);
+    }
+
+    if ("value" in node) {
+      node.value = "";
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+      node.value = value;
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+      node.dispatchEvent(new Event("change", { bubbles: true }));
+    } else {
+      document.execCommand("delete", false, null);
+      node.textContent = "";
+      const eventOptions = { bubbles: true };
+      node.dispatchEvent(new InputEvent("beforeinput", { data: value, inputType: "insertText", ...eventOptions }));
+      document.execCommand("insertText", false, value);
+      node.dispatchEvent(new Event("input", eventOptions));
+    }
     await wait(500);
   }
 
@@ -422,9 +463,19 @@
     if (partial) return partial;
 
     const titleNode = [...document.querySelectorAll("span[title], div[title]")].find((node) => {
-      return cleanText(node.getAttribute("title") || node.textContent).toLowerCase() === normalizedChatName;
+      return cleanText(node.getAttribute("title") || node.textContent).toLowerCase().includes(normalizedChatName);
     });
     return titleNode?.closest("[role='gridcell'], [role='listitem'], div[data-testid*='cell-frame'], div[data-testid*='chat-list-item']") || null;
+  }
+
+  function clickNode(node) {
+    if (!node) return false;
+    const target = node.closest("[role='gridcell'], [role='listitem'], button, a, div[data-testid*='cell-frame'], div[data-testid*='chat-list-item']") || node;
+    target.scrollIntoView({ block: "center", inline: "nearest" });
+    target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    return true;
   }
 
   async function openArchiveView() {
@@ -443,10 +494,18 @@
       await openArchiveView();
     }
 
-    const searchBox = findSearchBox();
+    let searchBox = findSearchBox();
+    if (!searchBox) {
+      const trigger = findSearchTrigger();
+      if (trigger) {
+        clickNode(trigger);
+        await wait(700);
+        searchBox = findSearchBox();
+      }
+    }
     if (!searchBox) throw new Error("Search box not found");
 
-    await typeIntoContentEditable(searchBox, normalizedChatName);
+    await typeIntoEditable(searchBox, normalizedChatName);
 
     const startedAt = Date.now();
     let row = findChatRowByName(normalizedChatName);
@@ -456,7 +515,7 @@
     }
     if (!row) throw new Error(`Chat not found: ${normalizedChatName}`);
 
-    row.click();
+    clickNode(row);
     await wait(1200);
     return { ok: true, chat_title: getCurrentChatTitle(), searched: normalizedChatName, archived: includeArchived };
   }
