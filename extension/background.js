@@ -156,6 +156,14 @@ async function validateCurrentChat(tabId, expected = {}) {
   return result;
 }
 
+async function prepareCurrentChatForSend(tabId) {
+  const result = await sendContentCommand(tabId, { action: "prepare_current_chat_for_send" });
+  if (!result?.ok) {
+    throw new Error(result?.error || "Could not prepare chat for send");
+  }
+  return result;
+}
+
 async function openChatByPhone(tabId, phone) {
   const normalizedPhone = normalizePhone(phone);
   const params = new URLSearchParams({ phone: normalizedPhone });
@@ -180,11 +188,18 @@ async function openChatByNameWithOptions(tabId, chatName, options = {}) {
     await sleep(2500);
   }
 
-  const result = await sendContentCommand(tabId, {
+  let result = await sendContentCommand(tabId, {
     action: "open_chat_by_name",
     chatName,
     includeArchived: options.includeArchived === true
   });
+  if (!result?.ok && options.includeArchived !== true) {
+    result = await sendContentCommand(tabId, {
+      action: "open_chat_by_name",
+      chatName,
+      includeArchived: true
+    });
+  }
   if (!result?.ok) throw new Error(result?.error || `Chat not found: ${chatName}`);
   await validateCurrentChat(tabId, { chatName });
   return result;
@@ -212,7 +227,7 @@ async function executeCommand(command) {
       return { ok: true };
 
     case "send_text":
-      await sendContentCommand(tabId, { action: "focus_message_box" });
+      await prepareCurrentChatForSend(tabId);
       await insertText(tabId, command.text || "");
       if (command.enter !== false) await pressKey(tabId, "Enter");
       await sleep(1200);
@@ -230,7 +245,7 @@ async function executeCommand(command) {
 
     case "send_text_to_phone":
       await openChatByPhone(tabId, command.phone);
-      await sendContentCommand(tabId, { action: "focus_message_box" });
+      await prepareCurrentChatForSend(tabId);
       await sleep(300);
       await insertText(tabId, command.text || "");
       if (command.send !== false) {
@@ -242,7 +257,7 @@ async function executeCommand(command) {
 
     case "send_text_to_archived_phone": {
       await openChatByPhone(tabId, command.phone);
-      await sendContentCommand(tabId, { action: "focus_message_box" });
+      await prepareCurrentChatForSend(tabId);
       await sleep(300);
       await insertText(tabId, command.text || "");
       if (command.send !== false) {
@@ -256,7 +271,7 @@ async function executeCommand(command) {
 
     case "send_text_to_group":
       await openChatByName(tabId, command.chatName || command.groupName || "");
-      await sendContentCommand(tabId, { action: "focus_message_box" });
+      await prepareCurrentChatForSend(tabId);
       await sleep(300);
       await insertText(tabId, command.text || "");
       if (command.send !== false) {
@@ -268,7 +283,7 @@ async function executeCommand(command) {
 
     case "send_text_to_archived_group": {
       await openChatByNameWithOptions(tabId, command.chatName || command.groupName || "", { includeArchived: true });
-      await sendContentCommand(tabId, { action: "focus_message_box" });
+      await prepareCurrentChatForSend(tabId);
       await sleep(300);
       await insertText(tabId, command.text || "");
       if (command.send !== false) {

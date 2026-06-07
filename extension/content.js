@@ -337,6 +337,19 @@
     return boxes[boxes.length - 1] || null;
   }
 
+  function hasActiveOverlay() {
+    const active = document.activeElement;
+    if (!active) return false;
+    const activeText = cleanText([
+      active.getAttribute?.("title"),
+      active.getAttribute?.("aria-label"),
+      active.getAttribute?.("placeholder"),
+      active.getAttribute?.("data-testid"),
+      active.textContent
+    ].join(" ")).toLowerCase();
+    return activeText.includes("search") || activeText.includes("חיפוש") || activeText.includes("find");
+  }
+
   function detectOpenChatError() {
     const text = cleanText(document.body?.innerText || "").toLowerCase();
     const patterns = [
@@ -573,6 +586,28 @@
     return { ok: true, chat_title: currentTitle };
   }
 
+  async function prepareCurrentChatForSend() {
+    if (hasActiveOverlay()) {
+      document.activeElement?.blur?.();
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
+      await wait(250);
+    }
+
+    const startedAt = Date.now();
+    let box = findMessageBox();
+    while (!box && Date.now() - startedAt < 8000) {
+      await wait(250);
+      box = findMessageBox();
+    }
+    if (!box) throw new Error("Message box not found");
+
+    box.focus();
+    box.click();
+    await wait(200);
+    return { ok: true };
+  }
+
   async function tryUnarchiveCurrentChat() {
     const buttons = [
       ...document.querySelectorAll("[aria-label]"),
@@ -646,6 +681,13 @@
 
       if (message.command?.action === "validate_current_chat") {
         validateCurrentChat(message.command.expected || {})
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+        return true;
+      }
+
+      if (message.command?.action === "prepare_current_chat_for_send") {
+        prepareCurrentChatForSend()
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
         return true;
