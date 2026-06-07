@@ -504,12 +504,48 @@
       || "";
   }
 
+  function parseSidebarSingleLine(allText) {
+    const text = cleanText(allText);
+    if (!text) return null;
+
+    const unreadDirect = text.match(/^\d+\s+unread\s+messages?\s+(.+?)\s+(\d{1,2}:\d{2})\s+(.+?)\s+\d+$/i);
+    if (unreadDirect) {
+      return {
+        title: cleanText(unreadDirect[1]),
+        time: cleanText(unreadDirect[2]),
+        body: cleanText(unreadDirect[3])
+      };
+    }
+
+    const direct = text.match(/^(.+?)\s+(\d{1,2}:\d{2})\s+(.+)$/);
+    if (direct) {
+      return {
+        title: cleanText(direct[1]),
+        time: cleanText(direct[2]),
+        body: cleanText(direct[3])
+      };
+    }
+
+    const group = text.match(/^(.+?)\s+(\d{1,2}:\d{2})\s+(.+?)\s*:\s*(.+)$/);
+    if (group) {
+      return {
+        title: cleanText(group[1]),
+        time: cleanText(group[2]),
+        sender: cleanText(group[3]),
+        body: cleanText(group[4])
+      };
+    }
+
+    return null;
+  }
+
   function extractSidebarRowMessage(row) {
     if (!row || !getSidebarRoot()?.contains(row)) return null;
 
     const rawSidebarText = String(row.innerText || row.textContent || "");
     const allText = cleanText(rawSidebarText);
     if (!allText) return null;
+    const singleLineMeta = parseSidebarSingleLine(allText);
 
     const lines = rawSidebarText
       .split("\n")
@@ -520,17 +556,17 @@
     const titleNode = row.querySelector("span[title], div[title]");
     const rawTitle = cleanText(titleNode?.getAttribute("title") || titleNode?.textContent || "");
     const splitTitle = splitTrailingTime(rawTitle);
-    const title = splitTitle.text || inferSidebarTitle(lines) || rawTitle;
+    const title = splitTitle.text || singleLineMeta?.title || inferSidebarTitle(lines) || rawTitle;
     if (isSidebarGenericTitle(title)) return null;
 
-    const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || splitTitle.time || "";
+    const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || splitTitle.time || singleLineMeta?.time || "";
     const unreadNode = row.querySelector("[aria-label*='unread' i], [data-testid*='icon-unread'], [data-testid*='alert']");
     const unreadText = cleanText(unreadNode?.getAttribute("aria-label") || unreadNode?.textContent || "");
     const cleanedLines = lines
       .map((line) => splitTrailingTime(stripUnreadNoise(line)).text)
       .filter((line) => line && line !== title && line !== unreadText && line !== timeCandidate && !isTypingValue(line));
 
-    const snippetCandidate = cleanedLines[cleanedLines.length - 1] || "";
+    const snippetCandidate = singleLineMeta?.body || cleanedLines[cleanedLines.length - 1] || "";
     const meta = inferMessageMetaFromText(snippetCandidate || allText);
     const rowPhone = extractPhoneCandidates(allText)[0] || null;
 
@@ -552,7 +588,7 @@
       target_name: title,
       target_phone: isGroup ? null : rowPhone,
       target_type: isGroup ? "group" : "direct",
-      sender: isGroup ? (meta.sender || null) : title,
+      sender: isGroup ? (singleLineMeta?.sender || meta.sender || null) : title,
       sender_phone: rowPhone,
       sent_at_text: timeCandidate,
       direction: "incoming",
