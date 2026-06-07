@@ -11,6 +11,7 @@ export default function App() {
   const [phoneNumber, setPhoneNumber] = useState("972544506093");
   const [groupName, setGroupName] = useState("");
   const [makeArchivedVisible, setMakeArchivedVisible] = useState(false);
+  const [showTechnicalEvents, setShowTechnicalEvents] = useState(false);
   const [imagePath, setImagePath] = useState("C:\\WA_FILES\\image1.png");
   const [caption, setCaption] = useState("מצורפת תמונה");
   const [status, setStatus] = useState({ type: "idle", message: "" });
@@ -25,6 +26,7 @@ export default function App() {
       const msgUrl = new URL("/api/messages", API_BASE);
       msgUrl.searchParams.set("limit", "100");
       if (chatFilter.trim()) msgUrl.searchParams.set("chat", chatFilter.trim());
+      if (showTechnicalEvents) msgUrl.searchParams.set("include_events", "true");
 
       const [messagesResponse, commandsResponse] = await Promise.all([
         fetch(msgUrl),
@@ -71,11 +73,40 @@ export default function App() {
     await load();
   }
 
+  async function downloadMessages() {
+    setStatus({ type: "working", message: "מכין קובץ לוג..." });
+    const exportUrl = new URL("/api/messages/export", API_BASE);
+    if (chatFilter.trim()) exportUrl.searchParams.set("chat", chatFilter.trim());
+    if (showTechnicalEvents) exportUrl.searchParams.set("include_events", "true");
+
+    const response = await fetch(exportUrl, {
+      headers: { "x-api-token": apiToken }
+    });
+    if (!response.ok) {
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch {}
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = `wa-messages-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(href);
+    setStatus({ type: "ok", message: "קובץ הלוג ירד" });
+  }
+
   useEffect(() => {
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, [apiToken]);
+  }, [apiToken, showTechnicalEvents]);
 
   function updateApiToken(value) {
     setApiToken(value);
@@ -93,6 +124,14 @@ export default function App() {
   async function handleClearMessages() {
     try {
       await clearMessages();
+    } catch (error) {
+      setStatus({ type: "error", message: String(error?.message || error) });
+    }
+  }
+
+  async function handleDownloadMessages() {
+    try {
+      await downloadMessages();
     } catch (error) {
       setStatus({ type: "error", message: String(error?.message || error) });
     }
@@ -227,13 +266,22 @@ export default function App() {
           <div>
             <h2 style={styles.panelTitle}>הודעות שנקלטו</h2>
             <p style={styles.panelDescription}>
-              {latestMessage ? `ההודעה האחרונה התקבלה ב־${formatTime(latestMessage.created_at)}` : "עדיין לא נקלטו הודעות. אם שלחת webhook ידני בלבד, תראה כאן הודעות רק אחרי שההרחבה תשלח אירועי WhatsApp Web."}
+              {latestMessage
+                ? `ההודעה האחרונה התקבלה ב־${formatTime(latestMessage.created_at)}`
+                : showTechnicalEvents
+                  ? "אין עדיין אירועים שמורים."
+                  : "אין כרגע הודעות message. אם תרצה, אפשר לסמן הצגת אירועים טכניים כדי לראות extension/page events."}
             </p>
           </div>
         </div>
         <div style={styles.toolbar}>
           <input placeholder="סינון לפי צ׳אט" value={chatFilter} onChange={(e) => setChatFilter(e.target.value)} style={styles.input} />
+          <label style={styles.inlineCheckbox}>
+            <input type="checkbox" checked={showTechnicalEvents} onChange={(e) => setShowTechnicalEvents(e.target.checked)} />
+            <span>הצג גם אירועים טכניים</span>
+          </label>
           <button onClick={load} style={styles.secondaryButton}>רענון</button>
+          <button onClick={handleDownloadMessages} style={styles.secondaryButton}>הורד לוג מלא</button>
           <button onClick={handleClearMessages} style={styles.dangerButton}>נקה את כל ההודעות</button>
         </div>
         <div style={styles.messageList}>
@@ -436,6 +484,7 @@ const styles = {
   field: { display: "grid", gap: 8 },
   fieldLabel: { fontSize: 14, fontWeight: 700, color: "#374151" },
   checkboxRow: { display: "flex", gap: 8, alignItems: "center", fontWeight: 700, color: "#374151" },
+  inlineCheckbox: { display: "flex", gap: 8, alignItems: "center", fontWeight: 700, color: "#374151", whiteSpace: "nowrap" },
   toolbar: { display: "flex", gap: 8, marginBottom: 16 },
   input: { padding: 12, fontSize: 15, width: "100%", boxSizing: "border-box", border: "1px solid #d1d5db", borderRadius: 12, background: "#fff" },
   textarea: { padding: 12, fontSize: 15, minHeight: 100, width: "100%", boxSizing: "border-box", border: "1px solid #d1d5db", borderRadius: 12, background: "#fff" },

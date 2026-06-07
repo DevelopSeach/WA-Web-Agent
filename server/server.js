@@ -104,6 +104,37 @@ app.get("/api/messages", async (req, res) => {
   res.json({ ok: true, count: rows.length, messages: rows });
 });
 
+app.get("/api/messages/export", requireToken, async (req, res) => {
+  const includeEvents = String(req.query.include_events || "").toLowerCase() === "true";
+  const chat = String(req.query.chat || "");
+
+  let rows;
+  if (chat) {
+    if (includeEvents) {
+      [rows] = await pool.execute(
+        `SELECT * FROM wa_messages WHERE chat_title LIKE ? ORDER BY id DESC`,
+        [`%${chat}%`]
+      );
+    } else {
+      [rows] = await pool.execute(
+        `SELECT * FROM wa_messages WHERE event_type = 'message' AND chat_title LIKE ? ORDER BY id DESC`,
+        [`%${chat}%`]
+      );
+    }
+  } else {
+    if (includeEvents) {
+      [rows] = await pool.execute(`SELECT * FROM wa_messages ORDER BY id DESC`);
+    } else {
+      [rows] = await pool.execute(`SELECT * FROM wa_messages WHERE event_type = 'message' ORDER BY id DESC`);
+    }
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename=\"wa-messages-${timestamp}.json\"`);
+  res.send(JSON.stringify({ ok: true, exported_at: new Date().toISOString(), include_events: includeEvents, count: rows.length, messages: rows }, null, 2));
+});
+
 app.delete("/api/messages", requireToken, async (req, res) => {
   const [result] = await pool.execute(`DELETE FROM wa_messages`);
   res.json({ ok: true, deleted: result.affectedRows || 0 });
