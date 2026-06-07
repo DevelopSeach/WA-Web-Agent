@@ -38,6 +38,30 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
 
   const capturedAt = msg.captured_at ? new Date(msg.captured_at) : new Date();
 
+  if ((msg.event_type || "") === "message") {
+    const [existingRows] = await pool.execute(
+      `SELECT id, message_uid
+       FROM wa_messages
+       WHERE event_type = 'message'
+         AND COALESCE(chat_title, '') = COALESCE(?, '')
+         AND COALESCE(sender, '') = COALESCE(?, '')
+         AND COALESCE(message_text, '') = COALESCE(?, '')
+         AND COALESCE(sent_at_text, '') = COALESCE(?, '')
+       ORDER BY id DESC
+       LIMIT 1`,
+      [
+        msg.chat_title || msg.payload?.title || null,
+        msg.sender || null,
+        msg.text || msg.payload?.body || null,
+        msg.sent_at_text || null
+      ]
+    );
+
+    if (existingRows.length) {
+      return res.json({ ok: true, saved: false, duplicate: true, uid: existingRows[0].message_uid, duplicate_of: existingRows[0].id });
+    }
+  }
+
   const sql = `
     INSERT INTO wa_messages
     (message_uid, event_type, source, chat_title, sender, direction, sent_at_text, captured_at, message_text, media_json, reactions_json, raw_json)

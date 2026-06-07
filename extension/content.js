@@ -211,6 +211,8 @@
     if (!text) return true;
     return [
       "chats",
+      "channels",
+      "channel",
       "updates in status",
       "status",
       "search",
@@ -282,6 +284,8 @@
     return [
       "",
       "chats",
+      "channels",
+      "channel",
       "archived",
       "archive",
       "status",
@@ -295,6 +299,39 @@
       "ארכיון",
       "קהילות"
     ].includes(text);
+  }
+
+  function isNoisySystemText(value) {
+    const text = cleanText(value).toLowerCase();
+    if (!text) return true;
+    if ([
+      "online",
+      "unread",
+      "photo",
+      "video",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+      "sunday",
+      "שי, you"
+    ].includes(text)) return true;
+
+    return [
+      "messages and calls are end-to-end encrypted",
+      "click here for contact info",
+      "click here for group info",
+      "changed this group's icon",
+      "invite to group via link",
+      "add members",
+      "add description",
+      "created today by",
+      "this message was deleted",
+      "uses a default timer for disappearing messages",
+      "new messages will disappear from this chat"
+    ].some((needle) => text.includes(needle));
   }
 
   function findMessageElement(el) {
@@ -467,30 +504,38 @@
     const uid = messageEl.getAttribute("data-id") || buildSyntheticUid(messageEl, prePlainText, rawText, inferredDirection);
     if (!uid || seen.has(uid)) return null;
     if (!rawText && !prePlainText && !messageEl.querySelector("img, video, audio, a[href], [data-icon]")) return null;
+    if (isNoisySystemText(rawText)) return null;
 
     const targetType = detectTargetType();
     const senderPhone = extractSenderPhone(messageEl, parsed.sender, prePlainText);
     const extractedTargetName = extractTargetName();
     const extractedTargetPhone = extractTargetPhone();
+    const currentChatTitle = getCurrentChatTitle();
+    const fallbackName = parsed.sender || inferredMeta.sender || "";
+    const effectiveChatTitle = isGenericTargetName(currentChatTitle) ? fallbackName : currentChatTitle;
+    const effectiveTargetName = targetType === "direct"
+      ? (extractedTargetName || fallbackName)
+      : (extractedTargetName || effectiveChatTitle || currentChatTitle);
+    if (isGenericTargetName(currentChatTitle) && !fallbackName && !extractedTargetName) return null;
 
     const record = {
       event_type: "message",
       source: "whatsapp_web_extension_dom",
       uid,
-      chat_title: getCurrentChatTitle(),
+      chat_title: effectiveChatTitle || currentChatTitle,
       target_name: targetType === "direct"
-        ? (extractedTargetName || (inferredDirection === "incoming" ? (parsed.sender || inferredMeta.sender) : ""))
-        : (extractedTargetName || getCurrentChatTitle()),
+        ? (effectiveTargetName || (inferredDirection === "incoming" ? fallbackName : ""))
+        : (effectiveTargetName || effectiveChatTitle || currentChatTitle),
       target_phone: targetType === "direct"
         ? (extractedTargetPhone || (inferredDirection === "incoming" ? senderPhone : null))
         : extractedTargetPhone,
       target_key: targetType === "direct"
-        ? (extractedTargetPhone || buildParticipantKey("target", [extractedTargetName || getCurrentChatTitle(), targetType]))
-        : buildParticipantKey("target", [extractedTargetName || getCurrentChatTitle(), targetType]),
+        ? (extractedTargetPhone || buildParticipantKey("target", [effectiveTargetName || effectiveChatTitle || currentChatTitle, targetType]))
+        : buildParticipantKey("target", [effectiveTargetName || effectiveChatTitle || currentChatTitle, targetType]),
       target_type: targetType,
       sender: parsed.sender || inferredMeta.sender || null,
       sender_phone: senderPhone,
-      sender_key: senderPhone || buildParticipantKey("sender", [parsed.sender || inferredMeta.sender || getCurrentChatTitle(), targetType]),
+      sender_key: senderPhone || buildParticipantKey("sender", [fallbackName || effectiveChatTitle || currentChatTitle, targetType]),
       sent_at_text: parsed.sent_at_text || inferredMeta.sent_at_text,
       direction: inferredDirection,
       text: inferredMeta.body || rawText,
@@ -613,6 +658,7 @@
     const body = stripUnreadNoise(meta.body || snippetCandidate || fallbackBody || "");
     if (isWeakSidebarBody(body, title, timeCandidate)) return null;
     if (isMostlyNumeric(title) && !timeCandidate && isMostlyNumeric(body) && body.length <= 2) return null;
+    if (isNoisySystemText(body)) return null;
 
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
     if (!uid || seen.has(uid)) return null;

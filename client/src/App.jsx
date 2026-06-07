@@ -440,13 +440,17 @@ function formatTarget(message) {
     : rawName;
   const type = message.raw_json?.target_type;
   const phone = message.raw_json?.target_phone;
+  const key = message.raw_json?.target_key;
   if (type === "group") return name;
   if (senderName && name === senderName) {
     return phone && phone !== message.raw_json?.sender_phone
       ? `${name} יעד (${phone})`
-      : "החשבון המחובר";
+      : key
+        ? `החשבון המחובר [ID: ${key}]`
+        : "החשבון המחובר";
   }
-  return phone ? `${name} (${phone})` : name;
+  if (phone) return `${name} (${phone})`;
+  return key ? `${name} [ID: ${key}]` : name;
 }
 
 function getDirectionLabel(direction) {
