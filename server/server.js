@@ -92,6 +92,11 @@ app.get("/api/messages", async (req, res) => {
   res.json({ ok: true, count: rows.length, messages: rows });
 });
 
+app.delete("/api/messages", requireToken, async (req, res) => {
+  const [result] = await pool.execute(`DELETE FROM wa_messages`);
+  res.json({ ok: true, deleted: result.affectedRows || 0 });
+});
+
 app.get("/api/chats", async (req, res) => {
   const [rows] = await pool.execute(`
     SELECT chat_title, COUNT(*) AS total_messages, MAX(created_at) AS last_message_at

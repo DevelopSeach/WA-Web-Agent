@@ -57,6 +57,20 @@ export default function App() {
     await load();
   }
 
+  async function clearMessages() {
+    setStatus({ type: "working", message: "מנקה הודעות..." });
+    const response = await fetch(new URL("/api/messages", API_BASE), {
+      method: "DELETE",
+      headers: { "x-api-token": apiToken }
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+    setStatus({ type: "ok", message: `נמחקו ${payload.deleted || 0} הודעות` });
+    await load();
+  }
+
   useEffect(() => {
     load();
     const t = setInterval(load, 5000);
@@ -71,6 +85,14 @@ export default function App() {
   async function handleCommand(command) {
     try {
       await createCommand(command);
+    } catch (error) {
+      setStatus({ type: "error", message: String(error?.message || error) });
+    }
+  }
+
+  async function handleClearMessages() {
+    try {
+      await clearMessages();
     } catch (error) {
       setStatus({ type: "error", message: String(error?.message || error) });
     }
@@ -212,6 +234,7 @@ export default function App() {
         <div style={styles.toolbar}>
           <input placeholder="סינון לפי צ׳אט" value={chatFilter} onChange={(e) => setChatFilter(e.target.value)} style={styles.input} />
           <button onClick={load} style={styles.secondaryButton}>רענון</button>
+          <button onClick={handleClearMessages} style={styles.dangerButton}>נקה את כל ההודעות</button>
         </div>
         <div style={styles.messageList}>
           {messages.length === 0 ? (
@@ -419,6 +442,7 @@ const styles = {
   actionsRow: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", gridColumn: "1 / -1" },
   button: { padding: "12px 18px", fontSize: 15, cursor: "pointer", borderRadius: 999, border: "none", background: "#111827", color: "#fff", fontWeight: 700 },
   secondaryButton: { padding: "12px 18px", fontSize: 15, cursor: "pointer", borderRadius: 999, border: "1px solid #d1d5db", background: "#fff", color: "#111827", fontWeight: 700 },
+  dangerButton: { padding: "12px 18px", fontSize: 15, cursor: "pointer", borderRadius: 999, border: "1px solid #fecaca", background: "#fff1f2", color: "#991b1b", fontWeight: 800 },
   list: { display: "grid", gap: 12 },
   messageList: { display: "grid", gap: 12 },
   emptyState: { border: "1px dashed #d1d5db", borderRadius: 14, padding: 24, color: "#6b7280", textAlign: "center", background: "#f9fafb" },
