@@ -75,17 +75,18 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
 });
 
 app.get("/api/messages", async (req, res) => {
-  const limit = Math.min(Number(req.query.limit || 100), 500);
+  const parsedLimit = Number(req.query.limit || 100);
+  const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 500)) : 100;
   const chat = String(req.query.chat || "");
 
   let rows;
   if (chat) {
     [rows] = await pool.execute(
-      `SELECT * FROM wa_messages WHERE chat_title LIKE ? ORDER BY id DESC LIMIT ?`,
-      [`%${chat}%`, limit]
+      `SELECT * FROM wa_messages WHERE chat_title LIKE ? ORDER BY id DESC LIMIT ${limit}`,
+      [`%${chat}%`]
     );
   } else {
-    [rows] = await pool.execute(`SELECT * FROM wa_messages ORDER BY id DESC LIMIT ?`, [limit]);
+    [rows] = await pool.execute(`SELECT * FROM wa_messages ORDER BY id DESC LIMIT ${limit}`);
   }
 
   res.json({ ok: true, count: rows.length, messages: rows });

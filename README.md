@@ -216,13 +216,50 @@ Restart Chrome after installation.
 
 ---
 
-## 8. Dashboard usage
+## 8. Start Chrome automatically on Windows login
+
+If you want message capture and command polling to resume automatically after Windows login, create a Startup-folder shortcut for Chrome:
+
+```powershell
+cd native-host
+powershell -ExecutionPolicy Bypass -File .\install-chrome-startup.ps1
+```
+
+Optional minimized launch:
+
+```powershell
+cd native-host
+powershell -ExecutionPolicy Bypass -File .\install-chrome-startup.ps1 -Minimized
+```
+
+What this does:
+
+- locates `chrome.exe`
+- creates a shortcut in the current user's Windows Startup folder
+- opens `https://web.whatsapp.com` on login
+
+Notes:
+
+- this runs on Windows user login, not before login
+- the extension must already be installed in that Chrome profile
+- WhatsApp Web must remain logged in for capture to continue
+- clipboard/native automation still requires an interactive desktop session
+
+To inspect or remove the shortcut manually, open:
+
+```text
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
+```
+
+---
+
+## 9. Dashboard usage
 
 After the production app is running, open the public domain and enter the `WEBHOOK_TOKEN` into the dashboard's `API Token` field. The dashboard stores it in browser local storage and uses it for protected command endpoints.
 
 ---
 
-## 9. Create commands manually
+## 10. Create commands manually
 
 ### Send text
 
@@ -264,7 +301,7 @@ curl -X POST http://localhost:$PORT/api/commands \
 
 ---
 
-## 10. Notes and limits
+## 11. Notes and limits
 
 - WhatsApp Web has no official browser-side API for group scraping. This is DOM observation and can break when WhatsApp changes the UI.
 - Full media download is not guaranteed. The extension logs what the browser exposes: thumbnails, blob URLs, links, metadata, etc.
@@ -274,7 +311,7 @@ curl -X POST http://localhost:$PORT/api/commands \
 
 ---
 
-## 11. Suggested next improvements
+## 12. Suggested next improvements
 
 - Add command target chat search/opening.
 - Add command retry and timeout.
