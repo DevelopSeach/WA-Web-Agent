@@ -152,6 +152,10 @@ async function openChatByPhone(tabId, phone) {
 }
 
 async function openChatByName(tabId, chatName) {
+  return await openChatByNameWithOptions(tabId, chatName, { includeArchived: false });
+}
+
+async function openChatByNameWithOptions(tabId, chatName, options = {}) {
   const tab = await chrome.tabs.get(tabId);
   if (!tab.url?.startsWith("https://web.whatsapp.com/")) {
     await chrome.tabs.update(tabId, { url: "https://web.whatsapp.com/" });
@@ -159,9 +163,17 @@ async function openChatByName(tabId, chatName) {
     await sleep(2500);
   }
 
-  const result = await sendContentCommand(tabId, { action: "open_chat_by_name", chatName });
+  const result = await sendContentCommand(tabId, {
+    action: "open_chat_by_name",
+    chatName,
+    includeArchived: options.includeArchived === true
+  });
   if (!result?.ok) throw new Error(result?.error || `Chat not found: ${chatName}`);
   return result;
+}
+
+async function tryUnarchiveCurrentChat(tabId) {
+  return await sendContentCommand(tabId, { action: "unarchive_current_chat" });
 }
 
 async function executeCommand(command) {
@@ -193,6 +205,9 @@ async function executeCommand(command) {
     case "open_group":
       return await openChatByName(tabId, command.chatName || command.groupName || "");
 
+    case "open_archived_chat":
+      return await openChatByNameWithOptions(tabId, command.chatName || command.groupName || "", { includeArchived: true });
+
     case "send_text_to_phone":
       await openChatByPhone(tabId, command.phone);
       await sendContentCommand(tabId, { action: "focus_message_box" });
@@ -203,6 +218,18 @@ async function executeCommand(command) {
       }
       return { ok: true, phone: normalizePhone(command.phone) };
 
+    case "send_text_to_archived_phone": {
+      await openChatByPhone(tabId, command.phone);
+      await sendContentCommand(tabId, { action: "focus_message_box" });
+      await sleep(300);
+      await insertText(tabId, command.text || "");
+      if (command.send !== false) {
+        await pressKey(tabId, "Enter");
+      }
+      const unarchiveResult = command.unarchive !== false ? await tryUnarchiveCurrentChat(tabId) : null;
+      return { ok: true, phone: normalizePhone(command.phone), unarchive: unarchiveResult };
+    }
+
     case "send_text_to_group":
       await openChatByName(tabId, command.chatName || command.groupName || "");
       await sendContentCommand(tabId, { action: "focus_message_box" });
@@ -212,6 +239,22 @@ async function executeCommand(command) {
         await pressKey(tabId, "Enter");
       }
       return { ok: true, chat_name: command.chatName || command.groupName || "" };
+
+    case "send_text_to_archived_group": {
+      await openChatByNameWithOptions(tabId, command.chatName || command.groupName || "", { includeArchived: true });
+      await sendContentCommand(tabId, { action: "focus_message_box" });
+      await sleep(300);
+      await insertText(tabId, command.text || "");
+      if (command.send !== false) {
+        await pressKey(tabId, "Enter");
+      }
+      const unarchiveResult = command.unarchive !== false ? await tryUnarchiveCurrentChat(tabId) : null;
+      return {
+        ok: true,
+        chat_name: command.chatName || command.groupName || "",
+        unarchive: unarchiveResult
+      };
+    }
 
     case "click":
       await clickAt(tabId, Number(command.x), Number(command.y));

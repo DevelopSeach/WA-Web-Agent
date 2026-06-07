@@ -10,6 +10,7 @@ export default function App() {
   const [text, setText] = useState("שלום, זו הודעת בדיקה");
   const [phoneNumber, setPhoneNumber] = useState("972544506093");
   const [groupName, setGroupName] = useState("");
+  const [unarchiveAfterSend, setUnarchiveAfterSend] = useState(true);
   const [imagePath, setImagePath] = useState("C:\\WA_FILES\\image1.png");
   const [caption, setCaption] = useState("מצורפת תמונה");
   const [status, setStatus] = useState({ type: "idle", message: "" });
@@ -144,6 +145,9 @@ export default function App() {
             <button style={styles.button} onClick={() => handleCommand({ action: "send_text_to_phone", phone: phoneNumber, text, send: true })}>
               שלח הודעת בדיקה למספר
             </button>
+            <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text_to_archived_phone", phone: phoneNumber, text, send: true, unarchive: unarchiveAfterSend })}>
+              שלח למשתמש בארכיון
+            </button>
             <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "open_chat", phone: phoneNumber, text })}>
               פתח צ׳אט למספר
             </button>
@@ -153,8 +157,14 @@ export default function App() {
             <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text_to_group", chatName: groupName, text, send: true })}>
               שלח לקבוצה לפי שם
             </button>
+            <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text_to_archived_group", chatName: groupName, text, send: true, unarchive: unarchiveAfterSend })}>
+              שלח לקבוצה בארכיון
+            </button>
             <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "open_group", chatName: groupName })}>
               פתח קבוצה לפי שם
+            </button>
+            <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "open_archived_chat", chatName: groupName })}>
+              פתח צ׳אט בארכיון
             </button>
             <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "focus_message_box" })}>
               פוקוס לתיבת הודעה
@@ -172,6 +182,13 @@ export default function App() {
           <label style={styles.field}>
             <span style={styles.fieldLabel}>Caption</span>
             <input value={caption} onChange={(e) => setCaption(e.target.value)} style={styles.input} />
+          </label>
+
+          <label style={{ ...styles.field, alignSelf: "end" }}>
+            <span style={styles.checkboxRow}>
+              <input type="checkbox" checked={unarchiveAfterSend} onChange={(e) => setUnarchiveAfterSend(e.target.checked)} />
+              <span>להוציא מהארכיון אחרי שליחה</span>
+            </span>
           </label>
 
           <div style={styles.actionsRow}>

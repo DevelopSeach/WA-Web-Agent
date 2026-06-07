@@ -286,6 +286,21 @@
     return null;
   }
 
+  function findArchiveEntry() {
+    const nodes = [
+      ...document.querySelectorAll("[role='button']"),
+      ...document.querySelectorAll("[role='gridcell']"),
+      ...document.querySelectorAll("[role='listitem']"),
+      ...document.querySelectorAll("[title]"),
+      ...document.querySelectorAll("[aria-label]")
+    ];
+
+    return nodes.find((node) => {
+      const text = cleanText(`${node.innerText || ""} ${node.getAttribute("title") || ""} ${node.getAttribute("aria-label") || ""}`).toLowerCase();
+      return text.includes("archived") || text.includes("archive") || text.includes("ארכיון");
+    }) || null;
+  }
+
   async function typeIntoContentEditable(node, value) {
     node.focus();
     document.execCommand("selectAll", false, null);
@@ -311,6 +326,80 @@
     return collectChatCandidates().find((node) => cleanText(node.innerText).toLowerCase().includes(normalizedChatName)) || null;
   }
 
+  async function openArchiveView() {
+    const archiveEntry = findArchiveEntry();
+    if (!archiveEntry) throw new Error("Archive entry not found");
+    archiveEntry.click();
+    await wait(1200);
+    return { ok: true };
+  }
+
+  async function openChatByNameFlow(chatName, includeArchived = false) {
+    const normalizedChatName = cleanText(chatName || "");
+    if (!normalizedChatName) throw new Error("Missing chat name");
+
+    if (includeArchived) {
+      await openArchiveView();
+    }
+
+    const searchBox = findSearchBox();
+    if (!searchBox) throw new Error("Search box not found");
+
+    await typeIntoContentEditable(searchBox, normalizedChatName);
+
+    const startedAt = Date.now();
+    let row = findChatRowByName(normalizedChatName);
+    while (!row && Date.now() - startedAt < 10000) {
+      await wait(250);
+      row = findChatRowByName(normalizedChatName);
+    }
+    if (!row) throw new Error(`Chat not found: ${normalizedChatName}`);
+
+    row.click();
+    await wait(1200);
+    return { ok: true, chat_title: getCurrentChatTitle(), searched: normalizedChatName, archived: includeArchived };
+  }
+
+  async function tryUnarchiveCurrentChat() {
+    const buttons = [
+      ...document.querySelectorAll("[aria-label]"),
+      ...document.querySelectorAll("[title]"),
+      ...document.querySelectorAll("[role='button']")
+    ];
+
+    const directButton = buttons.find((node) => {
+      const text = cleanText(`${node.getAttribute("aria-label") || ""} ${node.getAttribute("title") || ""} ${node.innerText || ""}`).toLowerCase();
+      return text.includes("unarchive") || text.includes("הוצא מהארכיון") || text.includes("בטל ארכוב");
+    });
+
+    if (directButton) {
+      directButton.click();
+      await wait(500);
+      return { ok: true, method: "direct_button" };
+    }
+
+    const menuButton = buttons.find((node) => {
+      const text = cleanText(`${node.getAttribute("aria-label") || ""} ${node.getAttribute("title") || ""}`);
+      return text.includes("Menu") || text.includes("תפריט");
+    });
+
+    if (menuButton) {
+      menuButton.click();
+      await wait(400);
+      const menuItem = [...document.querySelectorAll("[role='button'], [role='menuitem'], [aria-label], [title]")].find((node) => {
+        const text = cleanText(`${node.innerText || ""} ${node.getAttribute("aria-label") || ""} ${node.getAttribute("title") || ""}`).toLowerCase();
+        return text.includes("unarchive") || text.includes("הוצא מהארכיון") || text.includes("בטל ארכוב");
+      });
+      if (menuItem) {
+        menuItem.click();
+        await wait(500);
+        return { ok: true, method: "menu_item" };
+      }
+    }
+
+    return { ok: false, error: "Unarchive action not found" };
+  }
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || message.type !== "WA_CONTENT_COMMAND") return;
 
@@ -329,25 +418,15 @@
       }
 
       if (message.command?.action === "open_chat_by_name") {
-        const chatName = cleanText(message.command.chatName || "");
-        if (!chatName) throw new Error("Missing chat name");
+        openChatByNameFlow(message.command.chatName || "", message.command.includeArchived === true)
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+        return true;
+      }
 
-        const searchBox = findSearchBox();
-        if (!searchBox) throw new Error("Search box not found");
-
-        typeIntoContentEditable(searchBox, chatName)
-          .then(async () => {
-            const startedAt = Date.now();
-            let row = findChatRowByName(chatName);
-            while (!row && Date.now() - startedAt < 10000) {
-              await wait(250);
-              row = findChatRowByName(chatName);
-            }
-            if (!row) throw new Error(`Chat not found: ${chatName}`);
-            row.click();
-            await wait(1200);
-            sendResponse({ ok: true, chat_title: getCurrentChatTitle(), searched: chatName });
-          })
+      if (message.command?.action === "unarchive_current_chat") {
+        tryUnarchiveCurrentChat()
+          .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
         return true;
       }
