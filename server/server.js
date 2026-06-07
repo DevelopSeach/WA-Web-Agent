@@ -197,6 +197,7 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
       `SELECT id, message_uid
        FROM wa_messages
        WHERE event_type = 'message'
+         AND message_uid <> ?
          AND COALESCE(chat_title, '') = COALESCE(?, '')
          AND COALESCE(sender, '') = COALESCE(?, '')
          AND COALESCE(message_text, '') = COALESCE(?, '')
@@ -204,6 +205,7 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
        ORDER BY id DESC
        LIMIT 1`,
       [
+        msg.uid,
         msg.chat_title || msg.payload?.title || null,
         msg.sender || null,
         msg.text || msg.payload?.body || null,
