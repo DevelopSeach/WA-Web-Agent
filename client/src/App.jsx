@@ -228,12 +228,15 @@ export default function App() {
                   <div style={styles.subtleText}>
                     יעד: {formatTarget(message)}
                   </div>
+                  <div style={styles.subtleText}>
+                    זמן הודעה: {formatWhatsAppTime(message)}
+                  </div>
                 </div>
                 <div style={styles.alignEnd}>
                   <span style={{ ...styles.directionBadge, background: getDirectionColor(message.direction) }}>
                     {getDirectionLabel(message.direction)}
                   </span>
-                  <span style={styles.timestamp}>{formatWhatsAppTime(message)}</span>
+                  <span style={styles.timestamp}>{formatTime(message.captured_at || message.created_at)}</span>
                 </div>
               </div>
               <div style={styles.messageBody}>{message.message_text || "(ללא טקסט)"}</div>
