@@ -78,15 +78,27 @@ app.get("/api/messages", async (req, res) => {
   const parsedLimit = Number(req.query.limit || 100);
   const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 500)) : 100;
   const chat = String(req.query.chat || "");
+  const includeEvents = String(req.query.include_events || "").toLowerCase() === "true";
 
   let rows;
   if (chat) {
-    [rows] = await pool.execute(
-      `SELECT * FROM wa_messages WHERE chat_title LIKE ? ORDER BY id DESC LIMIT ${limit}`,
-      [`%${chat}%`]
-    );
+    if (includeEvents) {
+      [rows] = await pool.execute(
+        `SELECT * FROM wa_messages WHERE chat_title LIKE ? ORDER BY id DESC LIMIT ${limit}`,
+        [`%${chat}%`]
+      );
+    } else {
+      [rows] = await pool.execute(
+        `SELECT * FROM wa_messages WHERE event_type = 'message' AND chat_title LIKE ? ORDER BY id DESC LIMIT ${limit}`,
+        [`%${chat}%`]
+      );
+    }
   } else {
-    [rows] = await pool.execute(`SELECT * FROM wa_messages ORDER BY id DESC LIMIT ${limit}`);
+    if (includeEvents) {
+      [rows] = await pool.execute(`SELECT * FROM wa_messages ORDER BY id DESC LIMIT ${limit}`);
+    } else {
+      [rows] = await pool.execute(`SELECT * FROM wa_messages WHERE event_type = 'message' ORDER BY id DESC LIMIT ${limit}`);
+    }
   }
 
   res.json({ ok: true, count: rows.length, messages: rows });

@@ -572,6 +572,32 @@
     return { ok: true };
   }
 
+  async function captureOutgoingMessageByText(text, timeoutMs = 5000) {
+    const expectedText = cleanText(text);
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const nodes = [
+        ...document.querySelectorAll(".message-out[data-id]"),
+        ...document.querySelectorAll(".message-out [data-id]")
+      ];
+
+      for (const node of nodes.reverse()) {
+        const message = extractMessage(node);
+        if (!message) continue;
+        if (!expectedText || cleanText(message.text).includes(expectedText)) {
+          sendToBackground(message);
+          return { ok: true, uid: message.uid };
+        }
+      }
+
+      scan(document.body);
+      await wait(350);
+    }
+
+    return { ok: false, error: "Outgoing message not captured yet" };
+  }
+
   async function validateCurrentChat(expected = {}) {
     const explicitError = detectOpenChatError();
     if (explicitError) {
@@ -644,6 +670,7 @@
       box.dispatchEvent(new KeyboardEvent("keypress", { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true }));
       box.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true }));
       await wait(250);
+      await captureOutgoingMessageByText(value, 6000);
     }
 
     return { ok: true };
