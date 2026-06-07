@@ -103,9 +103,75 @@
       const text = cleanText(node.innerText || node.getAttribute("aria-label") || "");
       if (!text) return;
       const emojis = text.match(/\p{Extended_Pictographic}/gu);
-      if (emojis && emojis.length) reactions.push({ text, emojis });
+      if (!emojis || !emojis.length) return;
+
+      const actors = [];
+      const byMatch = text.match(/(?:by|from)\s+(.+)$/i);
+      if (byMatch?.[1]) actors.push(...byMatch[1].split(/,|&/).map((value) => cleanText(value)).filter(Boolean));
+
+      const hebrewMatch = text.match(/(?:מאת|על ידי)\s+(.+)$/i);
+      if (hebrewMatch?.[1]) actors.push(...hebrewMatch[1].split(/,|&|ו/).map((value) => cleanText(value)).filter(Boolean));
+
+      reactions.push({
+        text,
+        emojis,
+        actors: [...new Set(actors)]
+      });
     });
     return reactions;
+  }
+
+  function extractAck(messageEl) {
+    const iconNames = [
+      "msg-check",
+      "msg-dblcheck",
+      "msg-dblcheck-ack",
+      "msg-time",
+      "msg-error"
+    ];
+
+    for (const iconName of iconNames) {
+      if (messageEl.querySelector(`[data-icon='${iconName}']`)) {
+        if (iconName === "msg-check") return { code: "sent", label: "sent" };
+        if (iconName === "msg-dblcheck") return { code: "delivered", label: "delivered" };
+        if (iconName === "msg-dblcheck-ack") return { code: "read", label: "read" };
+        if (iconName === "msg-time") return { code: "pending", label: "pending" };
+        if (iconName === "msg-error") return { code: "error", label: "error" };
+      }
+    }
+
+    const statusNode = messageEl.querySelector("[aria-label*='read' i], [aria-label*='delivered' i], [aria-label*='sent' i], [aria-label*='נקראה' i], [aria-label*='נמסרה' i], [aria-label*='נשלחה' i]");
+    if (!statusNode) return null;
+
+    const label = cleanText(statusNode.getAttribute("aria-label") || statusNode.innerText);
+    const lower = label.toLowerCase();
+    if (lower.includes("read") || label.includes("נקרא")) return { code: "read", label };
+    if (lower.includes("delivered") || label.includes("נמסר")) return { code: "delivered", label };
+    if (lower.includes("sent") || label.includes("נשלח")) return { code: "sent", label };
+    return { code: "unknown", label };
+  }
+
+  function extractReplyContext(messageEl) {
+    const candidates = [
+      ...messageEl.querySelectorAll("[data-testid*='quoted' i]"),
+      ...messageEl.querySelectorAll("[data-testid*='reply' i]"),
+      ...messageEl.querySelectorAll("[aria-label*='quoted' i]"),
+      ...messageEl.querySelectorAll("[aria-label*='reply' i]"),
+      ...messageEl.querySelectorAll("[aria-label*='תגובה' i]")
+    ];
+
+    const quotedNode = candidates.find((node) => cleanText(node.innerText || node.getAttribute("aria-label") || "").length > 0);
+    if (!quotedNode) return null;
+
+    const text = cleanText(quotedNode.innerText || quotedNode.getAttribute("aria-label") || "");
+    if (!text) return null;
+
+    const lines = text.split("\n").map((value) => cleanText(value)).filter(Boolean);
+    return {
+      text,
+      sender: lines.length > 1 ? lines[0] : null,
+      snippet: lines.length > 1 ? lines.slice(1).join(" ") : text
+    };
   }
 
   function extractMessage(el) {
@@ -128,6 +194,8 @@
       sent_at_text: parsed.sent_at_text,
       direction: detectDirection(messageEl),
       text: cleanText(textNode.innerText),
+      ack: extractAck(messageEl),
+      reply_to: extractReplyContext(messageEl),
       media: extractMedia(messageEl),
       reactions: extractReactions(messageEl),
       page_url: location.href,

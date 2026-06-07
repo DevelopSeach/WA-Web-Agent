@@ -95,6 +95,29 @@ async function debuggerCommand(tabId, method, params = {}) {
   return await chrome.debugger.sendCommand({ tabId }, method, params);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForTabComplete(tabId, timeoutMs = 15000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.status === "complete") return tab;
+    await sleep(250);
+  }
+  throw new Error("Timed out waiting for WhatsApp Web tab to load");
+}
+
+function normalizePhone(rawPhone) {
+  const phone = String(rawPhone || "").trim();
+  const normalized = phone.startsWith("+")
+    ? `+${phone.slice(1).replace(/\D/g, "")}`
+    : phone.replace(/\D/g, "");
+  if (!normalized || normalized === "+") throw new Error("Missing phone number");
+  return normalized.startsWith("+") ? normalized.slice(1) : normalized;
+}
+
 async function clickAt(tabId, x, y) {
   await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
   await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
@@ -115,6 +138,18 @@ async function sendToNative(command) {
 
 async function sendContentCommand(tabId, command) {
   return await chrome.tabs.sendMessage(tabId, { type: "WA_CONTENT_COMMAND", command });
+}
+
+async function openChatByPhone(tabId, phone, text = "") {
+  const normalizedPhone = normalizePhone(phone);
+  const params = new URLSearchParams({ phone: normalizedPhone });
+  if (text) params.set("text", text);
+  await chrome.tabs.update(tabId, {
+    url: `https://web.whatsapp.com/send?${params.toString()}`
+  });
+  await waitForTabComplete(tabId);
+  await sleep(2500);
+  return { ok: true, phone: normalizedPhone };
 }
 
 async function executeCommand(command) {
@@ -139,6 +174,16 @@ async function executeCommand(command) {
       await insertText(tabId, command.text || "");
       if (command.enter !== false) await pressKey(tabId, "Enter");
       return { ok: true };
+
+    case "open_chat":
+      return await openChatByPhone(tabId, command.phone, command.text || "");
+
+    case "send_text_to_phone":
+      await openChatByPhone(tabId, command.phone, command.text || "");
+      if (command.send !== false) {
+        await pressKey(tabId, "Enter");
+      }
+      return { ok: true, phone: normalizePhone(command.phone) };
 
     case "click":
       await clickAt(tabId, Number(command.x), Number(command.y));
