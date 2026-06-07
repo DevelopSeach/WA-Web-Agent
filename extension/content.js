@@ -30,6 +30,7 @@
   function cleanText(value) {
     return String(value || "")
       .replace(/\u200e/g, "")
+      .replace(/[\u200f\u202a-\u202e\u2066-\u2069]/g, "")
       .replace(/\s+/g, " ")
       .trim();
   }
