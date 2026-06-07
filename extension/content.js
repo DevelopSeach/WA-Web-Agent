@@ -97,6 +97,25 @@
     return text === "typing…" || text === "typing..." || text === "מקליד…";
   }
 
+  function splitTrailingTime(value) {
+    const text = cleanText(value);
+    const match = text.match(/^(.*?)(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/);
+    if (!match) return { text, time: "" };
+    return {
+      text: cleanText(match[1]),
+      time: cleanText(match[2])
+    };
+  }
+
+  function hasLetters(value) {
+    return /[A-Za-z\u0590-\u05FF]/.test(String(value || ""));
+  }
+
+  function isMostlyNumeric(value) {
+    const text = cleanText(value).replace(/[+\-\s().]/g, "");
+    return !!text && /^\d+$/.test(text);
+  }
+
   function normalizePhoneCandidate(value) {
     const text = String(value || "").trim();
     const hasPlus = text.startsWith("+");
@@ -443,7 +462,6 @@
       captured_at: new Date().toISOString()
     };
 
-    seen.add(uid);
     return record;
   }
 
@@ -475,7 +493,9 @@
     if (!row || !getSidebarRoot()?.contains(row)) return null;
 
     const titleNode = row.querySelector("span[title], div[title]");
-    const title = cleanText(titleNode?.getAttribute("title") || titleNode?.textContent || "");
+    const rawTitle = cleanText(titleNode?.getAttribute("title") || titleNode?.textContent || "");
+    const splitTitle = splitTrailingTime(rawTitle);
+    const title = splitTitle.text || rawTitle;
     if (isSidebarGenericTitle(title)) return null;
 
     const allText = cleanText(row.innerText || row.textContent || "");
@@ -484,19 +504,20 @@
     const lines = allText.split("\n").map((value) => cleanText(value)).filter(Boolean);
     if (!lines.length) return null;
 
-    const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || "";
+    const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || splitTitle.time || "";
     const unreadNode = row.querySelector("[aria-label*='unread' i], [data-testid*='icon-unread'], [data-testid*='alert']");
     const unreadText = cleanText(unreadNode?.getAttribute("aria-label") || unreadNode?.textContent || "");
     const cleanedLines = lines
-      .map((line) => stripUnreadNoise(line))
-      .filter((line) => line && line !== title && line !== unreadText && line !== timeCandidate && !/^\d+$/.test(line) && !isTypingValue(line));
+      .map((line) => splitTrailingTime(stripUnreadNoise(line)).text)
+      .filter((line) => line && line !== title && line !== unreadText && line !== timeCandidate && !isTypingValue(line));
 
     const snippetCandidate = cleanedLines[cleanedLines.length - 1] || "";
     const meta = inferMessageMetaFromText(snippetCandidate || allText);
     const rowPhone = extractPhoneCandidates(allText)[0] || null;
 
     const body = stripUnreadNoise(meta.body || snippetCandidate || "");
-    if (!body || body === title || isTypingValue(body)) return null;
+    if (!body || isTypingValue(body)) return null;
+    if (body === title && !timeCandidate) return null;
 
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
     if (!uid || seen.has(uid)) return null;
@@ -528,9 +549,30 @@
   }
 
   function scanSidebar() {
+    const grouped = new Map();
     collectSidebarRows().forEach((row) => {
       const msg = extractSidebarRowMessage(row);
-      if (msg) sendToBackground(msg);
+      if (!msg) return;
+
+      const groupKey = buildStringHash("sidebar-group", [msg.text, msg.sent_at_text]);
+      const current = grouped.get(groupKey);
+      if (!current) {
+        grouped.set(groupKey, msg);
+        return;
+      }
+
+      const currentScore = (hasLetters(current.chat_title) ? 2 : 0) + (!isMostlyNumeric(current.chat_title) ? 1 : 0);
+      const nextScore = (hasLetters(msg.chat_title) ? 2 : 0) + (!isMostlyNumeric(msg.chat_title) ? 1 : 0);
+      if (nextScore > currentScore) {
+        grouped.set(groupKey, msg);
+      }
+    });
+
+    grouped.forEach((msg) => {
+      if (!seen.has(msg.uid)) {
+        seen.add(msg.uid);
+        sendToBackground(msg);
+      }
     });
   }
 
