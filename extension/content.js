@@ -206,6 +206,30 @@
     return !!node.closest("#main");
   }
 
+  function getSidebarRoot() {
+    return document.querySelector("#side");
+  }
+
+  function isSidebarGenericTitle(value) {
+    const text = cleanText(value).toLowerCase();
+    return [
+      "",
+      "chats",
+      "archived",
+      "archive",
+      "status",
+      "updates",
+      "updates in status",
+      "communities",
+      "starred",
+      "search",
+      "חיפוש",
+      "עדכונים",
+      "ארכיון",
+      "קהילות"
+    ].includes(text);
+  }
+
   function findMessageElement(el) {
     if (!el || !el.closest) return null;
     return el.closest("[data-id]")
@@ -229,6 +253,16 @@
       hash |= 0;
     }
     return `synthetic-${Math.abs(hash)}`;
+  }
+
+  function buildStringHash(prefix, parts) {
+    const base = [prefix, ...parts.map((part) => cleanText(part))].join("|");
+    let hash = 0;
+    for (let index = 0; index < base.length; index += 1) {
+      hash = ((hash << 5) - hash) + base.charCodeAt(index);
+      hash |= 0;
+    }
+    return `${prefix}-${Math.abs(hash)}`;
   }
 
   function extractMedia(el) {
@@ -406,6 +440,76 @@
     }
     nodes.forEach((node) => {
       const msg = extractMessage(node);
+      if (msg) sendToBackground(msg);
+    });
+  }
+
+  function collectSidebarRows() {
+    const side = getSidebarRoot();
+    if (!side) return [];
+    return [
+      ...side.querySelectorAll("[role='listitem']"),
+      ...side.querySelectorAll("[role='gridcell']"),
+      ...side.querySelectorAll("div[data-testid*='cell-frame']"),
+      ...side.querySelectorAll("div[data-testid*='chat-list-item']")
+    ];
+  }
+
+  function extractSidebarRowMessage(row) {
+    if (!row || !getSidebarRoot()?.contains(row)) return null;
+
+    const titleNode = row.querySelector("span[title], div[title]");
+    const title = cleanText(titleNode?.getAttribute("title") || titleNode?.textContent || "");
+    if (isSidebarGenericTitle(title)) return null;
+
+    const allText = cleanText(row.innerText || row.textContent || "");
+    if (!allText) return null;
+
+    const lines = allText.split("\n").map((value) => cleanText(value)).filter(Boolean);
+    if (!lines.length) return null;
+
+    const snippetCandidate = lines.find((line) => line !== title && !/^\d+$/.test(line) && line.length > 1) || "";
+    const meta = inferMessageMetaFromText(snippetCandidate || allText);
+    const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || meta.sent_at_text || "";
+    const unreadNode = row.querySelector("[aria-label*='unread' i], [data-testid*='icon-unread'], [data-testid*='alert']");
+    const unreadText = cleanText(unreadNode?.getAttribute("aria-label") || unreadNode?.textContent || "");
+    const rowPhone = extractPhoneCandidates(allText)[0] || null;
+
+    const body = meta.body || snippetCandidate || allText;
+    if (!body || body === title) return null;
+
+    const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
+    if (!uid || seen.has(uid)) return null;
+
+    const isGroup = /,/.test(title) || /group|קבוצה/i.test(allText);
+    const record = {
+      event_type: "message",
+      source: "whatsapp_web_extension_sidebar",
+      uid,
+      chat_title: title,
+      target_name: title,
+      target_phone: isGroup ? null : rowPhone,
+      target_type: isGroup ? "group" : "direct",
+      sender: meta.sender || (!isGroup ? title : null),
+      sender_phone: rowPhone,
+      sent_at_text: timeCandidate,
+      direction: "incoming",
+      text: body,
+      ack: null,
+      reply_to: null,
+      media: [],
+      reactions: [],
+      page_url: location.href,
+      captured_at: new Date().toISOString()
+    };
+
+    seen.add(uid);
+    return record;
+  }
+
+  function scanSidebar() {
+    collectSidebarRows().forEach((row) => {
+      const msg = extractSidebarRowMessage(row);
       if (msg) sendToBackground(msg);
     });
   }
@@ -869,6 +973,7 @@
 
   const start = () => {
     getChatRoots().forEach((root) => scan(root));
+    scanSidebar();
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
@@ -879,6 +984,7 @@
     observer.observe(document.body, { childList: true, subtree: true });
     periodicScanHandle = window.setInterval(() => {
       getChatRoots().forEach((root) => scan(root));
+      scanSidebar();
     }, 2000);
     sendToBackground({ event_type: "extension_started", source: "whatsapp_web_extension", page_url: location.href, captured_at: new Date().toISOString() });
   };
