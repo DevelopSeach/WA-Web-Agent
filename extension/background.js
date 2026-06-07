@@ -140,15 +140,14 @@ async function sendContentCommand(tabId, command) {
   return await chrome.tabs.sendMessage(tabId, { type: "WA_CONTENT_COMMAND", command });
 }
 
-async function openChatByPhone(tabId, phone, text = "") {
+async function openChatByPhone(tabId, phone) {
   const normalizedPhone = normalizePhone(phone);
   const params = new URLSearchParams({ phone: normalizedPhone });
-  if (text) params.set("text", text);
   await chrome.tabs.update(tabId, {
     url: `https://web.whatsapp.com/send?${params.toString()}`
   });
   await waitForTabComplete(tabId);
-  await sleep(2500);
+  await sleep(3000);
   return { ok: true, phone: normalizedPhone };
 }
 
@@ -176,10 +175,13 @@ async function executeCommand(command) {
       return { ok: true };
 
     case "open_chat":
-      return await openChatByPhone(tabId, command.phone, command.text || "");
+      return await openChatByPhone(tabId, command.phone);
 
     case "send_text_to_phone":
-      await openChatByPhone(tabId, command.phone, command.text || "");
+      await openChatByPhone(tabId, command.phone);
+      await sendContentCommand(tabId, { action: "focus_message_box" });
+      await sleep(300);
+      await insertText(tabId, command.text || "");
       if (command.send !== false) {
         await pressKey(tabId, "Enter");
       }
