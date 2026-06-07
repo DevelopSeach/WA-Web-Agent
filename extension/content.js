@@ -550,10 +550,17 @@
     clickNode(row);
     await wait(1200);
     const openedTitle = cleanText(getCurrentChatTitle());
-    if (!openedTitle.toLowerCase().includes(normalizedChatName)) {
+    const hasMessageBox = !!findMessageBox();
+    if (!openedTitle && !hasMessageBox) {
       throw new Error(`Chat not found: ${normalizedChatName}`);
     }
-    return { ok: true, chat_title: openedTitle, searched: normalizedChatName, archived: includeArchived };
+    return {
+      ok: true,
+      chat_title: openedTitle,
+      searched: normalizedChatName,
+      archived: includeArchived,
+      matched_row_text: cleanText(row.innerText)
+    };
   }
 
   async function captureRecentMessages(iterations = 5, waitMs = 400) {
@@ -579,7 +586,7 @@
     }
 
     const currentTitle = cleanText(getCurrentChatTitle());
-    if (expected.chatName && !currentTitle.toLowerCase().includes(cleanText(expected.chatName).toLowerCase())) {
+    if (expected.chatName && !currentTitle && !messageBox) {
       throw new Error(`Chat not found: ${expected.chatName}`);
     }
 

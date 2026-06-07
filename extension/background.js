@@ -201,7 +201,7 @@ async function openChatByNameWithOptions(tabId, chatName, options = {}) {
     chatName,
     includeArchived: options.includeArchived === true
   });
-  if (!result?.ok && options.includeArchived !== true) {
+  if (!result?.ok && options.includeArchived !== true && String(result?.error || "").includes("Chat not found")) {
     result = await sendContentCommand(tabId, {
       action: "open_chat_by_name",
       chatName,
