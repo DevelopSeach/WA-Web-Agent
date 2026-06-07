@@ -10,14 +10,15 @@ export default function App() {
   const [text, setText] = useState("שלום, זו הודעת בדיקה");
   const [phoneNumber, setPhoneNumber] = useState("972544506093");
   const [groupName, setGroupName] = useState("");
-  const [unarchiveAfterSend, setUnarchiveAfterSend] = useState(true);
+  const [makeArchivedVisible, setMakeArchivedVisible] = useState(false);
   const [imagePath, setImagePath] = useState("C:\\WA_FILES\\image1.png");
   const [caption, setCaption] = useState("מצורפת תמונה");
   const [status, setStatus] = useState({ type: "idle", message: "" });
 
-  const incomingCount = messages.filter((message) => message.direction === "incoming").length;
-  const outgoingCount = messages.filter((message) => message.direction === "outgoing").length;
-  const latestMessage = messages[0] || null;
+  const sortedMessages = [...messages].sort(compareMessagesByWhatsAppTime);
+  const incomingCount = sortedMessages.filter((message) => message.direction === "incoming").length;
+  const outgoingCount = sortedMessages.filter((message) => message.direction === "outgoing").length;
+  const latestMessage = sortedMessages[0] || null;
 
   async function load() {
     try {
@@ -145,7 +146,7 @@ export default function App() {
             <button style={styles.button} onClick={() => handleCommand({ action: "send_text_to_phone", phone: phoneNumber, text, send: true })}>
               שלח הודעת בדיקה למספר
             </button>
-            <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text_to_archived_phone", phone: phoneNumber, text, send: true, unarchive: unarchiveAfterSend })}>
+            <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text_to_archived_phone", phone: phoneNumber, text, send: true, makeVisible: makeArchivedVisible })}>
               שלח למשתמש בארכיון
             </button>
             <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "open_chat", phone: phoneNumber, text })}>
@@ -157,7 +158,7 @@ export default function App() {
             <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text_to_group", chatName: groupName, text, send: true })}>
               שלח לקבוצה לפי שם
             </button>
-            <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text_to_archived_group", chatName: groupName, text, send: true, unarchive: unarchiveAfterSend })}>
+            <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text_to_archived_group", chatName: groupName, text, send: true, makeVisible: makeArchivedVisible })}>
               שלח לקבוצה בארכיון
             </button>
             <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "open_group", chatName: groupName })}>
@@ -181,13 +182,13 @@ export default function App() {
 
           <label style={styles.field}>
             <span style={styles.fieldLabel}>Caption</span>
-            <input value={caption} onChange={(e) => setCaption(e.target.value)} style={styles.input} />
+              <input value={caption} onChange={(e) => setCaption(e.target.value)} style={styles.input} />
           </label>
 
           <label style={{ ...styles.field, alignSelf: "end" }}>
             <span style={styles.checkboxRow}>
-              <input type="checkbox" checked={unarchiveAfterSend} onChange={(e) => setUnarchiveAfterSend(e.target.checked)} />
-              <span>להוציא מהארכיון אחרי שליחה</span>
+              <input type="checkbox" checked={makeArchivedVisible} onChange={(e) => setMakeArchivedVisible(e.target.checked)} />
+              <span>להפוך צ׳אטים מהארכיון לגלויים אחרי פעולה</span>
             </span>
           </label>
 
@@ -215,7 +216,7 @@ export default function App() {
         <div style={styles.messageList}>
           {messages.length === 0 ? (
             <div style={styles.emptyState}>אין עדיין הודעות. ברגע שההרחבה תקלוט הודעה נכנסת או יוצאת, היא תופיע כאן.</div>
-          ) : messages.map((message) => (
+          ) : sortedMessages.map((message) => (
             <article key={message.id} style={styles.messageCard}>
               <div style={styles.metaRow}>
                 <div>
@@ -224,12 +225,15 @@ export default function App() {
                     מאת: {message.sender || "לא ידוע"}
                     {message.raw_json?.sender_phone ? ` (${message.raw_json.sender_phone})` : ""}
                   </div>
+                  <div style={styles.subtleText}>
+                    יעד: {formatTarget(message)}
+                  </div>
                 </div>
                 <div style={styles.alignEnd}>
                   <span style={{ ...styles.directionBadge, background: getDirectionColor(message.direction) }}>
                     {getDirectionLabel(message.direction)}
                   </span>
-                  <span style={styles.timestamp}>{formatTime(message.created_at)}</span>
+                  <span style={styles.timestamp}>{formatWhatsAppTime(message)}</span>
                 </div>
               </div>
               <div style={styles.messageBody}>{message.message_text || "(ללא טקסט)"}</div>
@@ -304,6 +308,54 @@ function formatTime(value) {
   return new Date(value).toLocaleString("he-IL");
 }
 
+function parseWhatsAppTime(message) {
+  const raw = String(message.sent_at_text || "").trim();
+  const candidates = [
+    raw,
+    raw.replace(",", ""),
+    raw.replace(/\./g, "/")
+  ];
+
+  for (const candidate of candidates) {
+    const direct = Date.parse(candidate);
+    if (Number.isFinite(direct)) return direct;
+
+    const dmYHm = candidate.match(/(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4}).*?(\d{1,2}):(\d{2})/);
+    if (dmYHm) {
+      const [, d, m, y, hh, mm] = dmYHm;
+      const year = y.length === 2 ? `20${y}` : y;
+      return new Date(Number(year), Number(m) - 1, Number(d), Number(hh), Number(mm)).getTime();
+    }
+
+    const hm = candidate.match(/^(\d{1,2}):(\d{2})$/);
+    if (hm) {
+      const base = new Date(message.captured_at || message.created_at || Date.now());
+      base.setHours(Number(hm[1]), Number(hm[2]), 0, 0);
+      return base.getTime();
+    }
+  }
+
+  const fallback = Date.parse(message.captured_at || message.created_at || "");
+  return Number.isFinite(fallback) ? fallback : 0;
+}
+
+function compareMessagesByWhatsAppTime(a, b) {
+  return parseWhatsAppTime(b) - parseWhatsAppTime(a);
+}
+
+function formatWhatsAppTime(message) {
+  if (message.sent_at_text) return message.sent_at_text;
+  return formatTime(message.captured_at || message.created_at);
+}
+
+function formatTarget(message) {
+  const name = message.raw_json?.target_name || message.chat_title || "לא ידוע";
+  const type = message.raw_json?.target_type;
+  const phone = message.raw_json?.target_phone;
+  if (type === "group") return name;
+  return phone ? `${name} (${phone})` : name;
+}
+
 function getDirectionLabel(direction) {
   if (direction === "incoming") return "נכנסת";
   if (direction === "outgoing") return "יוצאת";
@@ -357,6 +409,7 @@ const styles = {
   formGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 },
   field: { display: "grid", gap: 8 },
   fieldLabel: { fontSize: 14, fontWeight: 700, color: "#374151" },
+  checkboxRow: { display: "flex", gap: 8, alignItems: "center", fontWeight: 700, color: "#374151" },
   toolbar: { display: "flex", gap: 8, marginBottom: 16 },
   input: { padding: 12, fontSize: 15, width: "100%", boxSizing: "border-box", border: "1px solid #d1d5db", borderRadius: 12, background: "#fff" },
   textarea: { padding: 12, fontSize: 15, minHeight: 100, width: "100%", boxSizing: "border-box", border: "1px solid #d1d5db", borderRadius: 12, background: "#fff" },

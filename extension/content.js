@@ -41,6 +41,11 @@
     return cleanText(header.innerText);
   }
 
+  function getHeaderText() {
+    const header = document.querySelector("header");
+    return header ? cleanText(header.innerText) : "";
+  }
+
   function parsePrePlainText(value) {
     const result = { sent_at_text: "", sender: "" };
     if (!value) return result;
@@ -84,6 +89,30 @@
         extractPhoneCandidates(node.getAttribute("aria-label") || "").forEach((phone) => candidates.add(phone));
         extractPhoneCandidates(node.getAttribute("title") || "").forEach((phone) => candidates.add(phone));
         extractPhoneCandidates(node.textContent || "").forEach((phone) => candidates.add(phone));
+      });
+    }
+
+    return [...candidates][0] || null;
+  }
+
+  function detectTargetType() {
+    const href = String(location.href || "");
+    if (href.includes("@g.us") || href.includes("%40g.us")) return "group";
+    const headerText = getHeaderText().toLowerCase();
+    if (headerText.includes("group") || headerText.includes("קבוצה")) return "group";
+    return "direct";
+  }
+
+  function extractTargetPhone() {
+    const candidates = new Set();
+    extractPhoneCandidates(location.href).forEach((phone) => candidates.add(phone));
+
+    const header = document.querySelector("header");
+    if (header) {
+      extractPhoneCandidates(header.innerText || "").forEach((phone) => candidates.add(phone));
+      header.querySelectorAll("[title], [aria-label]").forEach((node) => {
+        extractPhoneCandidates(node.getAttribute("title") || "").forEach((phone) => candidates.add(phone));
+        extractPhoneCandidates(node.getAttribute("aria-label") || "").forEach((phone) => candidates.add(phone));
       });
     }
 
@@ -228,6 +257,9 @@
       source: "whatsapp_web_extension_dom",
       uid,
       chat_title: getCurrentChatTitle(),
+      target_name: getCurrentChatTitle(),
+      target_phone: extractTargetPhone(),
+      target_type: detectTargetType(),
       sender: parsed.sender,
       sender_phone: extractSenderPhone(messageEl, parsed.sender, prePlainText),
       sent_at_text: parsed.sent_at_text,
@@ -323,7 +355,13 @@
 
   function findChatRowByName(chatName) {
     const normalizedChatName = cleanText(chatName).toLowerCase();
-    return collectChatCandidates().find((node) => cleanText(node.innerText).toLowerCase().includes(normalizedChatName)) || null;
+    const candidates = collectChatCandidates();
+    const exact = candidates.find((node) => {
+      const text = cleanText(node.innerText).toLowerCase();
+      return text === normalizedChatName || text.split("\n")[0] === normalizedChatName;
+    });
+    if (exact) return exact;
+    return candidates.find((node) => cleanText(node.innerText).toLowerCase().includes(normalizedChatName)) || null;
   }
 
   async function openArchiveView() {

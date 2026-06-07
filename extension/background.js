@@ -226,7 +226,7 @@ async function executeCommand(command) {
       if (command.send !== false) {
         await pressKey(tabId, "Enter");
       }
-      const unarchiveResult = command.unarchive !== false ? await tryUnarchiveCurrentChat(tabId) : null;
+      const unarchiveResult = command.makeVisible === true ? await tryUnarchiveCurrentChat(tabId) : null;
       return { ok: true, phone: normalizePhone(command.phone), unarchive: unarchiveResult };
     }
 
@@ -248,7 +248,7 @@ async function executeCommand(command) {
       if (command.send !== false) {
         await pressKey(tabId, "Enter");
       }
-      const unarchiveResult = command.unarchive !== false ? await tryUnarchiveCurrentChat(tabId) : null;
+      const unarchiveResult = command.makeVisible === true ? await tryUnarchiveCurrentChat(tabId) : null;
       return {
         ok: true,
         chat_name: command.chatName || command.groupName || "",
