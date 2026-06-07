@@ -284,6 +284,7 @@
     const parsed = parsePrePlainText(prePlainText);
     const textNode = messageEl.querySelector(".copyable-text") || messageEl;
     const direction = detectDirection(messageEl);
+    if (direction === "unknown") return null;
     const targetType = detectTargetType();
     const senderPhone = extractSenderPhone(messageEl, parsed.sender, prePlainText);
     const extractedTargetName = extractTargetName();
@@ -627,10 +628,14 @@
     document.execCommand("delete", false, null);
     box.textContent = "";
 
-    const eventOptions = { bubbles: true };
-    box.dispatchEvent(new InputEvent("beforeinput", { data: value, inputType: "insertText", ...eventOptions }));
-    document.execCommand("insertText", false, value);
-    box.dispatchEvent(new Event("input", eventOptions));
+    if ("value" in box) {
+      box.value = value;
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+    } else {
+      document.execCommand("insertText", false, value);
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    }
 
     await wait(250);
 
