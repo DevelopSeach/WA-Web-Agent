@@ -97,6 +97,18 @@
     return text === "typing…" || text === "typing..." || text === "מקליד…";
   }
 
+  function isWeakSidebarBody(body, title, timeCandidate) {
+    const text = cleanText(body);
+    const titleText = cleanText(title);
+    const joined = cleanText(`${titleText} ${timeCandidate || ""}`);
+    if (!text) return true;
+    if (isTypingValue(text)) return true;
+    if (text === "…" || text === "...") return true;
+    if (text === titleText) return true;
+    if (joined && text === joined) return true;
+    return false;
+  }
+
   function splitTrailingTime(value) {
     const text = cleanText(value);
     const match = text.match(/^(.*?)(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/);
@@ -574,22 +586,24 @@
       cleanedLines.find((line) => line !== title && !isTypingValue(line)) || ""
     );
     const body = stripUnreadNoise(meta.body || snippetCandidate || fallbackBody || "");
-    if (!body || isTypingValue(body)) return null;
+    if (isWeakSidebarBody(body, title, timeCandidate)) return null;
 
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
     if (!uid || seen.has(uid)) return null;
 
     const isGroup = /,/.test(title) || /group|קבוצה/i.test(allText);
+    const normalizedTitlePhone = normalizePhoneCandidate(title);
+    const resolvedPhone = rowPhone || normalizedTitlePhone || null;
     const record = {
       event_type: "message",
       source: "whatsapp_web_extension_sidebar",
       uid,
       chat_title: title,
       target_name: title,
-      target_phone: isGroup ? null : rowPhone,
+      target_phone: isGroup ? null : resolvedPhone,
       target_type: isGroup ? "group" : "direct",
       sender: isGroup ? (singleLineMeta?.sender || meta.sender || null) : title,
-      sender_phone: rowPhone,
+      sender_phone: resolvedPhone,
       sent_at_text: timeCandidate,
       direction: "incoming",
       text: body,
@@ -610,15 +624,23 @@
       const msg = extractSidebarRowMessage(row);
       if (!msg) return;
 
-      const groupKey = buildStringHash("sidebar-group", [msg.text, msg.sent_at_text]);
+      const groupKey = buildStringHash("sidebar-group", [msg.chat_title, msg.sent_at_text]);
       const current = grouped.get(groupKey);
       if (!current) {
         grouped.set(groupKey, msg);
         return;
       }
 
-      const currentScore = (hasLetters(current.chat_title) ? 2 : 0) + (!isMostlyNumeric(current.chat_title) ? 1 : 0);
-      const nextScore = (hasLetters(msg.chat_title) ? 2 : 0) + (!isMostlyNumeric(msg.chat_title) ? 1 : 0);
+      const bodyScore = (candidate) => {
+        let score = 0;
+        if (!isWeakSidebarBody(candidate.text, candidate.chat_title, candidate.sent_at_text)) score += 5;
+        if (hasLetters(candidate.chat_title)) score += 2;
+        if (!isMostlyNumeric(candidate.chat_title)) score += 1;
+        if (candidate.target_phone || candidate.sender_phone) score += 1;
+        return score;
+      };
+      const currentScore = bodyScore(current);
+      const nextScore = bodyScore(msg);
       if (nextScore > currentScore) {
         grouped.set(groupKey, msg);
       }
