@@ -81,6 +81,22 @@
     return result;
   }
 
+  function stripUnreadNoise(value) {
+    return cleanText(String(value || "")
+      .replace(/\b\d+\s+unread\s+messages?\b/gi, "")
+      .replace(/\b\d+\s+unread\b/gi, "")
+      .replace(/\bunread\s+messages?\b/gi, "")
+      .replace(/\btyping…?\b/gi, "")
+      .replace(/\btyping\.\.\.\b/gi, "")
+      .replace(/\s+\d+\s*$/g, "")
+    );
+  }
+
+  function isTypingValue(value) {
+    const text = cleanText(value).toLowerCase();
+    return text === "typing…" || text === "typing..." || text === "מקליד…";
+  }
+
   function normalizePhoneCandidate(value) {
     const text = String(value || "").trim();
     const hasPlus = text.startsWith("+");
@@ -468,15 +484,19 @@
     const lines = allText.split("\n").map((value) => cleanText(value)).filter(Boolean);
     if (!lines.length) return null;
 
-    const snippetCandidate = lines.find((line) => line !== title && !/^\d+$/.test(line) && line.length > 1) || "";
-    const meta = inferMessageMetaFromText(snippetCandidate || allText);
-    const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || meta.sent_at_text || "";
+    const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || "";
     const unreadNode = row.querySelector("[aria-label*='unread' i], [data-testid*='icon-unread'], [data-testid*='alert']");
     const unreadText = cleanText(unreadNode?.getAttribute("aria-label") || unreadNode?.textContent || "");
+    const cleanedLines = lines
+      .map((line) => stripUnreadNoise(line))
+      .filter((line) => line && line !== title && line !== unreadText && line !== timeCandidate && !/^\d+$/.test(line) && !isTypingValue(line));
+
+    const snippetCandidate = cleanedLines[cleanedLines.length - 1] || "";
+    const meta = inferMessageMetaFromText(snippetCandidate || allText);
     const rowPhone = extractPhoneCandidates(allText)[0] || null;
 
-    const body = meta.body || snippetCandidate || allText;
-    if (!body || body === title) return null;
+    const body = stripUnreadNoise(meta.body || snippetCandidate || "");
+    if (!body || body === title || isTypingValue(body)) return null;
 
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
     if (!uid || seen.has(uid)) return null;
@@ -490,7 +510,7 @@
       target_name: title,
       target_phone: isGroup ? null : rowPhone,
       target_type: isGroup ? "group" : "direct",
-      sender: meta.sender || (!isGroup ? title : null),
+      sender: isGroup ? (meta.sender || null) : title,
       sender_phone: rowPhone,
       sent_at_text: timeCandidate,
       direction: "incoming",
