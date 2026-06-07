@@ -289,7 +289,7 @@ export default function App() {
             <div style={styles.emptyState}>אין עדיין הודעות. ברגע שההרחבה תקלוט הודעה נכנסת או יוצאת, היא תופיע כאן.</div>
           ) : sortedMessages.map((message) => (
             <article key={message.id} style={styles.messageCard}>
-              <div style={styles.metaRow}>
+              <div style={{ ...styles.metaRow, ...(isTechnicalEvent(message) ? styles.technicalHeader : {}) }}>
                 <div>
                   <div style={styles.chatTitle}>{message.chat_title || "ללא שם"}</div>
                   <div style={styles.subtleText}>
@@ -423,6 +423,10 @@ function formatWhatsAppTime(message) {
   return formatTime(message.captured_at || message.created_at);
 }
 
+function isTechnicalEvent(message) {
+  return String(message?.event_type || "").trim() !== "message";
+}
+
 function isGenericDisplayName(value) {
   const text = String(value || "").trim().toLowerCase();
   return ["", "chats", "updates in status", "status", "search", "חיפוש", "לא ידוע"].includes(text);
@@ -513,6 +517,7 @@ const styles = {
   messageCard: { border: "1px solid #e5e7eb", borderRadius: 16, padding: 14, background: "#fcfcfd" },
   commandCard: { border: "1px solid #e5e7eb", borderRadius: 16, padding: 14, background: "#f9fafb" },
   metaRow: { display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 10, alignItems: "flex-start" },
+  technicalHeader: { background: "#dcfce7", border: "1px solid #86efac", borderRadius: 12, padding: 10 },
   alignEnd: { display: "grid", gap: 8, justifyItems: "end" },
   chatTitle: { fontWeight: 800, fontSize: 18, marginBottom: 4 },
   subtleText: { color: "#6b7280", fontSize: 14 },
