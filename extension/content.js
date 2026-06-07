@@ -485,24 +485,33 @@
       ...side.querySelectorAll("[role='listitem']"),
       ...side.querySelectorAll("[role='gridcell']"),
       ...side.querySelectorAll("div[data-testid*='cell-frame']"),
-      ...side.querySelectorAll("div[data-testid*='chat-list-item']")
+      ...side.querySelectorAll("div[data-testid*='chat-list-item']"),
+      ...side.querySelectorAll("div[data-testid*='cell-frame-container']"),
+      ...side.querySelectorAll("[aria-selected]")
     ];
+  }
+
+  function inferSidebarTitle(lines) {
+    return lines
+      .map((line) => splitTrailingTime(stripUnreadNoise(line)).text)
+      .find((line) => line && !isSidebarGenericTitle(line) && !isTypingValue(line) && !/^\d+$/.test(line))
+      || "";
   }
 
   function extractSidebarRowMessage(row) {
     if (!row || !getSidebarRoot()?.contains(row)) return null;
-
-    const titleNode = row.querySelector("span[title], div[title]");
-    const rawTitle = cleanText(titleNode?.getAttribute("title") || titleNode?.textContent || "");
-    const splitTitle = splitTrailingTime(rawTitle);
-    const title = splitTitle.text || rawTitle;
-    if (isSidebarGenericTitle(title)) return null;
 
     const allText = cleanText(row.innerText || row.textContent || "");
     if (!allText) return null;
 
     const lines = allText.split("\n").map((value) => cleanText(value)).filter(Boolean);
     if (!lines.length) return null;
+
+    const titleNode = row.querySelector("span[title], div[title]");
+    const rawTitle = cleanText(titleNode?.getAttribute("title") || titleNode?.textContent || "");
+    const splitTitle = splitTrailingTime(rawTitle);
+    const title = splitTitle.text || inferSidebarTitle(lines) || rawTitle;
+    if (isSidebarGenericTitle(title)) return null;
 
     const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || splitTitle.time || "";
     const unreadNode = row.querySelector("[aria-label*='unread' i], [data-testid*='icon-unread'], [data-testid*='alert']");
@@ -576,6 +585,29 @@
         sendToBackground(msg);
       }
     });
+  }
+
+  function emitCaptureDebug() {
+    try {
+      const sidebarRows = collectSidebarRows();
+      const sidebarSamples = sidebarRows.slice(0, 5).map((row) => cleanText(row.innerText || row.textContent || "")).filter(Boolean);
+      const mainRoot = document.querySelector("#main");
+      const mainCandidates = mainRoot
+        ? mainRoot.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg']").length
+        : 0;
+
+      sendToBackground({
+        event_type: "capture_debug",
+        source: "whatsapp_web_extension_debug",
+        text: `sidebar_rows=${sidebarRows.length} main_candidates=${mainCandidates}`,
+        payload: {
+          sidebar_rows: sidebarRows.length,
+          main_candidates: mainCandidates,
+          sidebar_samples: sidebarSamples
+        },
+        captured_at: new Date().toISOString()
+      });
+    } catch {}
   }
 
   function sendToBackground(payload) {
@@ -1038,6 +1070,7 @@
   const start = () => {
     getChatRoots().forEach((root) => scan(root));
     scanSidebar();
+    emitCaptureDebug();
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
