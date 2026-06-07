@@ -58,6 +58,29 @@
     return result;
   }
 
+  function inferMessageMetaFromText(value) {
+    const text = cleanText(value);
+    const result = { sent_at_text: "", sender: "", body: text };
+    if (!text) return result;
+
+    const patterns = [
+      /^(?<sender>.+?)\s+(?<date>\d{1,2}\/\d{1,2}\/\d{2,4})\s+(?<body>.+)$/u,
+      /^(?<sender>.+?)\s+(?<date>\d{1,2}\.\d{1,2}\.\d{2,4})\s+(?<body>.+)$/u,
+      /^(?<sender>.+?)\s+(?<time>\d{1,2}:\d{2})\s+(?<body>.+)$/u
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (!match?.groups) continue;
+      result.sender = cleanText(match.groups.sender || "");
+      result.sent_at_text = cleanText(match.groups.date || match.groups.time || "");
+      result.body = cleanText(match.groups.body || text);
+      if (result.sender || result.sent_at_text) return result;
+    }
+
+    return result;
+  }
+
   function normalizePhoneCandidate(value) {
     const text = String(value || "").trim();
     const hasPlus = text.startsWith("+");
@@ -124,6 +147,7 @@
     const text = cleanText(value).toLowerCase();
     if (!text) return true;
     return [
+      "chats",
       "updates in status",
       "status",
       "search",
@@ -330,9 +354,10 @@
     const parsed = parsePrePlainText(prePlainText);
     const textNode = messageEl.querySelector(".copyable-text") || messageEl;
     const rawText = cleanText(textNode.innerText || textNode.textContent || "");
+    const inferredMeta = inferMessageMetaFromText(rawText);
     const direction = detectDirection(messageEl);
     const inferredDirection = direction === "unknown"
-      ? (parsed.sender ? "incoming" : "unknown")
+      ? ((parsed.sender || inferredMeta.sender) ? "incoming" : "unknown")
       : direction;
     const uid = messageEl.getAttribute("data-id") || buildSyntheticUid(messageEl, prePlainText, rawText, inferredDirection);
     if (!uid || seen.has(uid)) return null;
@@ -349,17 +374,17 @@
       uid,
       chat_title: getCurrentChatTitle(),
       target_name: targetType === "direct"
-        ? (extractedTargetName || (inferredDirection === "incoming" ? parsed.sender : ""))
+        ? (extractedTargetName || (inferredDirection === "incoming" ? (parsed.sender || inferredMeta.sender) : ""))
         : (extractedTargetName || getCurrentChatTitle()),
       target_phone: targetType === "direct"
         ? (extractedTargetPhone || (inferredDirection === "incoming" ? senderPhone : null))
         : extractedTargetPhone,
       target_type: targetType,
-      sender: parsed.sender || null,
+      sender: parsed.sender || inferredMeta.sender || null,
       sender_phone: senderPhone,
-      sent_at_text: parsed.sent_at_text,
+      sent_at_text: parsed.sent_at_text || inferredMeta.sent_at_text,
       direction: inferredDirection,
-      text: rawText,
+      text: inferredMeta.body || rawText,
       ack: extractAck(messageEl),
       reply_to: extractReplyContext(messageEl),
       media: extractMedia(messageEl),

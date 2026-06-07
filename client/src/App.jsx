@@ -422,8 +422,16 @@ function formatWhatsAppTime(message) {
   return formatTime(message.captured_at || message.created_at);
 }
 
+function isGenericDisplayName(value) {
+  const text = String(value || "").trim().toLowerCase();
+  return ["", "chats", "updates in status", "status", "search", "חיפוש", "לא ידוע"].includes(text);
+}
+
 function formatTarget(message) {
-  const name = message.raw_json?.target_name || message.chat_title || "לא ידוע";
+  const rawName = message.raw_json?.target_name || message.chat_title || "";
+  const name = isGenericDisplayName(rawName)
+    ? (message.raw_json?.sender || message.raw_json?.sender_phone || "לא ידוע")
+    : rawName;
   const type = message.raw_json?.target_type;
   const phone = message.raw_json?.target_phone;
   if (type === "group") return name;
