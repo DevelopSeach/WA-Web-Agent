@@ -332,6 +332,10 @@
     return `${prefix}-${Math.abs(hash)}`;
   }
 
+  function buildParticipantKey(prefix, parts) {
+    return buildStringHash(prefix, parts).replace(`${prefix}-`, `${prefix}_`);
+  }
+
   function extractMedia(el) {
     const media = [];
     el.querySelectorAll("img").forEach((img) => {
@@ -480,9 +484,13 @@
       target_phone: targetType === "direct"
         ? (extractedTargetPhone || (inferredDirection === "incoming" ? senderPhone : null))
         : extractedTargetPhone,
+      target_key: targetType === "direct"
+        ? (extractedTargetPhone || buildParticipantKey("target", [extractedTargetName || getCurrentChatTitle(), targetType]))
+        : buildParticipantKey("target", [extractedTargetName || getCurrentChatTitle(), targetType]),
       target_type: targetType,
       sender: parsed.sender || inferredMeta.sender || null,
       sender_phone: senderPhone,
+      sender_key: senderPhone || buildParticipantKey("sender", [parsed.sender || inferredMeta.sender || getCurrentChatTitle(), targetType]),
       sent_at_text: parsed.sent_at_text || inferredMeta.sent_at_text,
       direction: inferredDirection,
       text: inferredMeta.body || rawText,
@@ -618,9 +626,15 @@
       chat_title: title,
       target_name: title,
       target_phone: isGroup ? null : resolvedPhone,
+      target_key: isGroup
+        ? buildParticipantKey("target", [title, "group"])
+        : (resolvedPhone || buildParticipantKey("target", [title, "direct"])),
       target_type: isGroup ? "group" : "direct",
       sender: isGroup ? (singleLineMeta?.sender || meta.sender || null) : title,
       sender_phone: resolvedPhone,
+      sender_key: isGroup
+        ? buildParticipantKey("sender", [singleLineMeta?.sender || meta.sender || title, title, "group"])
+        : (resolvedPhone || buildParticipantKey("sender", [title, "direct"])),
       sent_at_text: timeCandidate,
       direction: "incoming",
       text: body,

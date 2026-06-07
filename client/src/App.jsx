@@ -295,6 +295,7 @@ export default function App() {
                   <div style={styles.subtleText}>
                     מאת: {message.sender || "לא ידוע"}
                     {message.raw_json?.sender_phone ? ` (${message.raw_json.sender_phone})` : ""}
+                    {!message.raw_json?.sender_phone && message.raw_json?.sender_key ? ` [ID: ${message.raw_json.sender_key}]` : ""}
                   </div>
                   <div style={styles.subtleText}>
                     יעד: {formatTarget(message)}
