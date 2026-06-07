@@ -3,6 +3,7 @@
   window.__waAgentContentInstalled = true;
 
   const seen = new Set();
+  let periodicScanHandle = null;
 
   injectPageHook();
 
@@ -172,6 +173,8 @@
     if (!el || !el.closest) return null;
     return el.closest("[data-id]")
       || el.closest("[data-pre-plain-text]")
+      || el.closest("[data-testid*='msg']")
+      || el.closest("[role='row']")
       || el.closest(".copyable-text")
       || el;
   }
@@ -320,7 +323,7 @@
       : direction;
     const uid = messageEl.getAttribute("data-id") || buildSyntheticUid(messageEl, prePlainText, rawText, inferredDirection);
     if (!uid || seen.has(uid)) return null;
-    if (!rawText && !prePlainText && !messageEl.querySelector("img, video, audio, a[href]")) return null;
+    if (!rawText && !prePlainText && !messageEl.querySelector("img, video, audio, a[href], [data-icon]")) return null;
 
     const targetType = detectTargetType();
     const senderPhone = extractSenderPhone(messageEl, parsed.sender, prePlainText);
@@ -339,7 +342,7 @@
         ? (extractedTargetPhone || (inferredDirection === "incoming" ? senderPhone : null))
         : extractedTargetPhone,
       target_type: targetType,
-      sender: parsed.sender,
+      sender: parsed.sender || null,
       sender_phone: senderPhone,
       sent_at_text: parsed.sent_at_text,
       direction: inferredDirection,
@@ -358,14 +361,23 @@
 
   function scan(root) {
     const nodes = [];
-    if (root?.matches?.("[data-id], [data-pre-plain-text], .copyable-text")) nodes.push(root);
+    if (root?.matches?.("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [role='row']")) nodes.push(root);
     if (root?.querySelectorAll) {
-      root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text").forEach((n) => nodes.push(n));
+      root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [role='row']").forEach((n) => nodes.push(n));
     }
     nodes.forEach((node) => {
       const msg = extractMessage(node);
       if (msg) sendToBackground(msg);
     });
+  }
+
+  function getChatRoots() {
+    return [
+      document.querySelector("#main"),
+      document.querySelector("[data-testid='conversation-panel-body']"),
+      document.querySelector("[aria-label*='Message list' i]"),
+      document.body
+    ].filter(Boolean);
   }
 
   function sendToBackground(payload) {
@@ -826,7 +838,7 @@
   });
 
   const start = () => {
-    scan(document.body);
+    getChatRoots().forEach((root) => scan(root));
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
@@ -835,6 +847,9 @@
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
+    periodicScanHandle = window.setInterval(() => {
+      getChatRoots().forEach((root) => scan(root));
+    }, 2000);
     sendToBackground({ event_type: "extension_started", source: "whatsapp_web_extension", page_url: location.href, captured_at: new Date().toISOString() });
   };
 
