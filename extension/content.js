@@ -241,6 +241,11 @@
     return isGenericTargetName(title) ? "" : title;
   }
 
+  function isSavedContactName(value) {
+    const text = cleanText(value);
+    return !!text && !normalizePhoneCandidate(text) && !isGenericTargetName(text) && hasLetters(text);
+  }
+
   function detectDirection(el) {
     if (extractAck(el)?.code) return "outgoing";
     if (el.closest(".message-in")) return "incoming";
@@ -511,6 +516,7 @@
     const extractedTargetName = extractTargetName();
     const extractedTargetPhone = extractTargetPhone();
     const currentChatTitle = getCurrentChatTitle();
+    if (isGenericTargetName(currentChatTitle)) return null;
     const fallbackName = parsed.sender || inferredMeta.sender || "";
     const effectiveChatTitle = isGenericTargetName(currentChatTitle) ? fallbackName : currentChatTitle;
     const effectiveTargetName = targetType === "direct"
@@ -566,16 +572,27 @@
   function collectSidebarRows() {
     const side = getSidebarRoot();
     if (!side) return [];
-    return [
+    const rawNodes = [
       ...side.querySelectorAll("[role='listitem']"),
-      ...side.querySelectorAll("[role='gridcell']"),
       ...side.querySelectorAll("[role='row']"),
       ...side.querySelectorAll("div[data-testid*='cell-frame']"),
       ...side.querySelectorAll("div[data-testid*='chat-list-item']"),
       ...side.querySelectorAll("div[data-testid*='cell-frame-container']"),
-      ...side.querySelectorAll("[aria-selected]"),
-      ...side.querySelectorAll("[data-testid*='cell-frame-title']")
+      ...side.querySelectorAll("[aria-selected]")
     ];
+
+    const unique = new Map();
+    rawNodes.forEach((node) => {
+      const container = node.closest?.("[role='listitem'], [role='row'], div[data-testid*='cell-frame-container'], div[data-testid*='chat-list-item'], div[data-testid*='cell-frame']")
+        || node;
+      if (!side.contains(container)) return;
+      const key = container.getAttribute?.("data-id")
+        || container.getAttribute?.("data-testid")
+        || `${container.tagName}:${cleanText(container.innerText || "").slice(0, 120)}`;
+      if (!unique.has(key)) unique.set(key, container);
+    });
+
+    return [...unique.values()];
   }
 
   function inferSidebarTitle(lines) {
@@ -659,6 +676,8 @@
     if (isWeakSidebarBody(body, title, timeCandidate)) return null;
     if (isMostlyNumeric(title) && !timeCandidate && isMostlyNumeric(body) && body.length <= 2) return null;
     if (isNoisySystemText(body)) return null;
+    if (!rawTitle && !singleLineMeta?.time && !timeCandidate) return null;
+    if (!isSavedContactName(title) && !normalizePhoneCandidate(title) && body.startsWith("\"")) return null;
 
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
     if (!uid || seen.has(uid)) return null;
