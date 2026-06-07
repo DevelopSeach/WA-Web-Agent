@@ -169,12 +169,24 @@
     return "unknown";
   }
 
+  function getChatRoots() {
+    return [
+      document.querySelector("#main"),
+      document.querySelector("[data-testid='conversation-panel-body']"),
+      document.querySelector("[aria-label*='Message list' i]")
+    ].filter(Boolean);
+  }
+
+  function isInConversationPanel(node) {
+    if (!node || !node.closest) return false;
+    return !!node.closest("#main");
+  }
+
   function findMessageElement(el) {
     if (!el || !el.closest) return null;
     return el.closest("[data-id]")
       || el.closest("[data-pre-plain-text]")
       || el.closest("[data-testid*='msg']")
-      || el.closest("[role='row']")
       || el.closest(".copyable-text")
       || el;
   }
@@ -311,6 +323,7 @@
   function extractMessage(el) {
     const messageEl = findMessageElement(el);
     if (!messageEl || !messageEl.getAttribute) return null;
+    if (!isInConversationPanel(messageEl)) return null;
 
     const copyable = messageEl.querySelector("[data-pre-plain-text]");
     const prePlainText = copyable ? copyable.getAttribute("data-pre-plain-text") : "";
@@ -360,24 +373,16 @@
   }
 
   function scan(root) {
+    if (!isInConversationPanel(root) && root !== document.body) return;
     const nodes = [];
-    if (root?.matches?.("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [role='row']")) nodes.push(root);
+    if (root?.matches?.("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg']")) nodes.push(root);
     if (root?.querySelectorAll) {
-      root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [role='row']").forEach((n) => nodes.push(n));
+      root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg']").forEach((n) => nodes.push(n));
     }
     nodes.forEach((node) => {
       const msg = extractMessage(node);
       if (msg) sendToBackground(msg);
     });
-  }
-
-  function getChatRoots() {
-    return [
-      document.querySelector("#main"),
-      document.querySelector("[data-testid='conversation-panel-body']"),
-      document.querySelector("[aria-label*='Message list' i]"),
-      document.body
-    ].filter(Boolean);
   }
 
   function sendToBackground(payload) {
@@ -617,7 +622,7 @@
 
   async function captureRecentMessages(iterations = 5, waitMs = 400) {
     for (let index = 0; index < iterations; index += 1) {
-      scan(document.body);
+      getChatRoots().forEach((root) => scan(root));
       await wait(waitMs);
     }
     return { ok: true };
@@ -632,8 +637,8 @@
         ...document.querySelectorAll(".message-out[data-id]"),
         ...document.querySelectorAll(".message-out [data-id]"),
         ...document.querySelectorAll(".message-out [data-pre-plain-text]"),
-        ...document.querySelectorAll("[data-pre-plain-text]"),
-        ...document.querySelectorAll(".copyable-text")
+        ...document.querySelectorAll("#main [data-pre-plain-text]"),
+        ...document.querySelectorAll("#main .copyable-text")
       ];
 
       for (const node of nodes.reverse()) {
@@ -645,7 +650,7 @@
         }
       }
 
-      scan(document.body);
+      getChatRoots().forEach((root) => scan(root));
       await wait(350);
     }
 
@@ -842,7 +847,7 @@
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
-          if (node.nodeType === Node.ELEMENT_NODE) scan(node);
+          if (node.nodeType === Node.ELEMENT_NODE && isInConversationPanel(node)) scan(node);
         }
       }
     });
