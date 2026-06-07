@@ -244,7 +244,17 @@
 
   function isSavedContactName(value) {
     const text = cleanText(value);
-    return !!text && !normalizePhoneCandidate(text) && !isGenericTargetName(text) && hasLetters(text);
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    if ([
+      "whatsapp business on web",
+      "business account",
+      "contact info",
+      "group info",
+      "communities",
+      "channels"
+    ].includes(lower)) return false;
+    return !normalizePhoneCandidate(text) && !isGenericTargetName(text) && hasLetters(text);
   }
 
   function detectDirection(el) {
@@ -1036,7 +1046,9 @@
       ...panel.querySelectorAll("h1, h2, h3")
     ].map((node) => cleanText(node.getAttribute?.("title") || node.getAttribute?.("aria-label") || node.textContent || "")).filter(Boolean);
 
-    const name = candidates.find((value) => isSavedContactName(value)) || "";
+    const name = candidates.find((value) => value.startsWith("~") && isSavedContactName(value))
+      || candidates.find((value) => isSavedContactName(value))
+      || "";
     const phone = candidates.map((value) => normalizePhoneCandidate(value)).find(Boolean) || normalizePhoneCandidate(panel.innerText || "") || "";
     return { name, phone };
   }

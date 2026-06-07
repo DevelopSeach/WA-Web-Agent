@@ -43,10 +43,13 @@ function isGenericDisplayName(value) {
     "chats",
     "channels",
     "channel",
+    "communities",
     "updates in status",
     "status",
     "search",
     "online",
+    "business account",
+    "whatsapp business on web",
     "לא ידוע"
   ].includes(text);
 }

@@ -435,7 +435,7 @@ function isTechnicalEvent(message) {
 
 function isGenericDisplayName(value) {
   const text = String(value || "").trim().toLowerCase();
-  return ["", "chats", "updates in status", "status", "search", "חיפוש", "לא ידוע"].includes(text);
+  return ["", "chats", "channels", "channel", "communities", "updates in status", "status", "search", "business account", "whatsapp business on web", "חיפוש", "לא ידוע"].includes(text);
 }
 
 function formatTarget(message) {
