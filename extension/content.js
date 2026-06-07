@@ -786,7 +786,12 @@
       if (!seen.has(msg.uid)) {
         seen.add(msg.uid);
         sendToBackground(msg);
-        if (msg.target_type === "direct" && normalizePhoneCandidate(msg.sender || msg.chat_title) && !isSavedContactName(msg.sender)) {
+        const shouldResolveIdentity = msg.target_type === "direct"
+          && (
+            normalizePhoneCandidate(msg.sender || msg.chat_title)
+            || (isSavedContactName(msg.sender || msg.chat_title) && !normalizePhoneCandidate(msg.sender_phone))
+          );
+        if (shouldResolveIdentity) {
           const matchedRow = collectSidebarRows().find((row) => cleanText(row.innerText || row.textContent || "").includes(cleanText(msg.chat_title || msg.sender || "")));
           if (matchedRow) resolveSidebarMessageIdentity(matchedRow, msg);
         }
@@ -1080,26 +1085,31 @@
 
   async function resolveSidebarMessageIdentity(row, msg) {
     const phone = normalizePhoneCandidate(msg.sender_phone || msg.sender || msg.chat_title);
-    if (!phone || resolvingIdentity.has(msg.uid)) return;
+    const currentName = cleanText(msg.sender || msg.chat_title || "");
+    if ((!phone && !isSavedContactName(currentName)) || resolvingIdentity.has(msg.uid)) return;
 
     resolvingIdentity.add(msg.uid);
     try {
       clickNode(row);
       await wait(1200);
       const resolved = await resolveCurrentChatProfile();
-      if (!resolved?.ok || !isSavedContactName(resolved.name)) return;
+      if (!resolved?.ok) return;
+
+      const resolvedName = isSavedContactName(resolved.name) ? resolved.name : currentName;
+      const resolvedPhone = normalizePhoneCandidate(resolved.phone || phone) || phone;
+      if (!resolvedName && !resolvedPhone) return;
 
       sendToBackground({
         ...msg,
-        chat_title: resolved.name,
-        target_name: resolved.name,
-        target_phone: normalizePhoneCandidate(resolved.phone || phone) || phone,
-        target_key: normalizePhoneCandidate(resolved.phone || phone) || phone,
-        sender: resolved.name,
-        sender_phone: normalizePhoneCandidate(resolved.phone || phone) || phone,
-        sender_key: normalizePhoneCandidate(resolved.phone || phone) || phone,
-        sender_resolved_name: resolved.name,
-        target_resolved_name: resolved.name
+        chat_title: resolvedName || msg.chat_title,
+        target_name: resolvedName || msg.target_name,
+        target_phone: resolvedPhone || msg.target_phone || null,
+        target_key: resolvedPhone || msg.target_key,
+        sender: resolvedName || msg.sender,
+        sender_phone: resolvedPhone || msg.sender_phone || null,
+        sender_key: resolvedPhone || msg.sender_key,
+        sender_resolved_name: resolvedName || msg.sender_resolved_name,
+        target_resolved_name: resolvedName || msg.target_resolved_name
       });
     } catch {}
     finally {
