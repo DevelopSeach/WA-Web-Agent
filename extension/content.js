@@ -515,9 +515,11 @@
     const meta = inferMessageMetaFromText(snippetCandidate || allText);
     const rowPhone = extractPhoneCandidates(allText)[0] || null;
 
-    const body = stripUnreadNoise(meta.body || snippetCandidate || "");
+    const fallbackBody = stripUnreadNoise(
+      cleanedLines.find((line) => line !== title && !isTypingValue(line)) || ""
+    );
+    const body = stripUnreadNoise(meta.body || snippetCandidate || fallbackBody || "");
     if (!body || isTypingValue(body)) return null;
-    if (body === title && !timeCandidate) return null;
 
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
     if (!uid || seen.has(uid)) return null;
