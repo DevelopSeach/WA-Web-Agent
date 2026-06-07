@@ -52,6 +52,44 @@
     return result;
   }
 
+  function normalizePhoneCandidate(value) {
+    const text = String(value || "").trim();
+    const hasPlus = text.startsWith("+");
+    const digits = text.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) return null;
+    return hasPlus ? `+${digits}` : digits;
+  }
+
+  function extractPhoneCandidates(value) {
+    const matches = String(value || "").match(/(?:\+?\d[\d\s\-().]{6,}\d)/g) || [];
+    return matches
+      .map((match) => normalizePhoneCandidate(match))
+      .filter(Boolean);
+  }
+
+  function extractSenderPhone(messageEl, parsedSender, prePlainText) {
+    const candidates = new Set();
+
+    extractPhoneCandidates(parsedSender).forEach((phone) => candidates.add(phone));
+    extractPhoneCandidates(prePlainText).forEach((phone) => candidates.add(phone));
+
+    const selectors = [
+      "[data-pre-plain-text]",
+      "[aria-label]",
+      "[title]"
+    ];
+
+    for (const selector of selectors) {
+      messageEl.querySelectorAll(selector).forEach((node) => {
+        extractPhoneCandidates(node.getAttribute("aria-label") || "").forEach((phone) => candidates.add(phone));
+        extractPhoneCandidates(node.getAttribute("title") || "").forEach((phone) => candidates.add(phone));
+        extractPhoneCandidates(node.textContent || "").forEach((phone) => candidates.add(phone));
+      });
+    }
+
+    return [...candidates][0] || null;
+  }
+
   function detectDirection(el) {
     if (el.closest(".message-in")) return "incoming";
     if (el.closest(".message-out")) return "outgoing";
@@ -191,6 +229,7 @@
       uid,
       chat_title: getCurrentChatTitle(),
       sender: parsed.sender,
+      sender_phone: extractSenderPhone(messageEl, parsed.sender, prePlainText),
       sent_at_text: parsed.sent_at_text,
       direction: detectDirection(messageEl),
       text: cleanText(textNode.innerText),

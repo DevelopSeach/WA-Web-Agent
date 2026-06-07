@@ -191,7 +191,10 @@ export default function App() {
               <div style={styles.metaRow}>
                 <div>
                   <div style={styles.chatTitle}>{message.chat_title || "ללא שם"}</div>
-                  <div style={styles.subtleText}>מאת: {message.sender || "לא ידוע"}</div>
+                  <div style={styles.subtleText}>
+                    מאת: {message.sender || "לא ידוע"}
+                    {message.raw_json?.sender_phone ? ` (${message.raw_json.sender_phone})` : ""}
+                  </div>
                 </div>
                 <div style={styles.alignEnd}>
                   <span style={{ ...styles.directionBadge, background: getDirectionColor(message.direction) }}>
