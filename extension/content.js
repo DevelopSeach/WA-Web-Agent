@@ -565,7 +565,6 @@
       captured_at: new Date().toISOString()
     };
 
-    seen.add(uid);
     return record;
   }
 
