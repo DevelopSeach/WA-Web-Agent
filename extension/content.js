@@ -119,6 +119,38 @@
     return [...candidates][0] || null;
   }
 
+  function isGenericTargetName(value) {
+    const text = cleanText(value).toLowerCase();
+    if (!text) return true;
+    return [
+      "updates in status",
+      "status",
+      "search",
+      "חיפוש",
+      "עדכונים",
+      "סטטוס"
+    ].includes(text);
+  }
+
+  function extractTargetName() {
+    const header = document.querySelector("header");
+    if (!header) return "";
+
+    const titleCandidates = [
+      ...header.querySelectorAll("span[title]"),
+      ...header.querySelectorAll("[title]"),
+      ...header.querySelectorAll("[aria-label]")
+    ]
+      .map((node) => cleanText(node.getAttribute("title") || node.getAttribute("aria-label") || node.textContent || ""))
+      .filter(Boolean);
+
+    const preferred = titleCandidates.find((candidate) => !isGenericTargetName(candidate) && !normalizePhoneCandidate(candidate));
+    if (preferred) return preferred;
+
+    const title = getCurrentChatTitle();
+    return isGenericTargetName(title) ? "" : title;
+  }
+
   function detectDirection(el) {
     if (el.closest(".message-in")) return "incoming";
     if (el.closest(".message-out")) return "outgoing";
@@ -251,19 +283,28 @@
     const prePlainText = copyable ? copyable.getAttribute("data-pre-plain-text") : "";
     const parsed = parsePrePlainText(prePlainText);
     const textNode = messageEl.querySelector(".copyable-text") || messageEl;
+    const direction = detectDirection(messageEl);
+    const targetType = detectTargetType();
+    const senderPhone = extractSenderPhone(messageEl, parsed.sender, prePlainText);
+    const extractedTargetName = extractTargetName();
+    const extractedTargetPhone = extractTargetPhone();
 
     const record = {
       event_type: "message",
       source: "whatsapp_web_extension_dom",
       uid,
       chat_title: getCurrentChatTitle(),
-      target_name: getCurrentChatTitle(),
-      target_phone: extractTargetPhone(),
-      target_type: detectTargetType(),
+      target_name: targetType === "direct"
+        ? (extractedTargetName || (direction === "incoming" ? parsed.sender : ""))
+        : (extractedTargetName || getCurrentChatTitle()),
+      target_phone: targetType === "direct"
+        ? (extractedTargetPhone || (direction === "incoming" ? senderPhone : null))
+        : extractedTargetPhone,
+      target_type: targetType,
       sender: parsed.sender,
-      sender_phone: extractSenderPhone(messageEl, parsed.sender, prePlainText),
+      sender_phone: senderPhone,
       sent_at_text: parsed.sent_at_text,
-      direction: detectDirection(messageEl),
+      direction,
       text: cleanText(textNode.innerText),
       ack: extractAck(messageEl),
       reply_to: extractReplyContext(messageEl),
