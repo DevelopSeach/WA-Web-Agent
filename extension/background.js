@@ -148,6 +148,14 @@ async function captureRecentMessages(tabId, iterations = 5, waitMs = 400) {
   }
 }
 
+async function validateCurrentChat(tabId, expected = {}) {
+  const result = await sendContentCommand(tabId, { action: "validate_current_chat", expected });
+  if (!result?.ok) {
+    throw new Error(result?.error || "Chat validation failed");
+  }
+  return result;
+}
+
 async function openChatByPhone(tabId, phone) {
   const normalizedPhone = normalizePhone(phone);
   const params = new URLSearchParams({ phone: normalizedPhone });
@@ -156,6 +164,7 @@ async function openChatByPhone(tabId, phone) {
   });
   await waitForTabComplete(tabId);
   await sleep(3000);
+  await validateCurrentChat(tabId, { phone: normalizedPhone });
   return { ok: true, phone: normalizedPhone };
 }
 
@@ -177,6 +186,7 @@ async function openChatByNameWithOptions(tabId, chatName, options = {}) {
     includeArchived: options.includeArchived === true
   });
   if (!result?.ok) throw new Error(result?.error || `Chat not found: ${chatName}`);
+  await validateCurrentChat(tabId, { chatName });
   return result;
 }
 

@@ -337,6 +337,25 @@
     return boxes[boxes.length - 1] || null;
   }
 
+  function detectOpenChatError() {
+    const text = cleanText(document.body?.innerText || "").toLowerCase();
+    const patterns = [
+      "phone number shared via url is invalid",
+      "this phone number isn't on whatsapp",
+      "this phone number is not on whatsapp",
+      "couldn't find that chat",
+      "לא נמצא צ׳אט",
+      "לא נמצא צ'אט",
+      "המספר הזה לא נמצא ב-whatsapp",
+      "מספר הטלפון ששותף דרך כתובת ה-url אינו חוקי",
+      "number shared via url is invalid"
+    ];
+
+    const matched = patterns.find((pattern) => text.includes(pattern));
+    if (matched) return matched;
+    return "";
+  }
+
   function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -517,7 +536,11 @@
 
     clickNode(row);
     await wait(1200);
-    return { ok: true, chat_title: getCurrentChatTitle(), searched: normalizedChatName, archived: includeArchived };
+    const openedTitle = cleanText(getCurrentChatTitle());
+    if (!openedTitle.toLowerCase().includes(normalizedChatName)) {
+      throw new Error(`Chat not found: ${normalizedChatName}`);
+    }
+    return { ok: true, chat_title: openedTitle, searched: normalizedChatName, archived: includeArchived };
   }
 
   async function captureRecentMessages(iterations = 5, waitMs = 400) {
@@ -526,6 +549,28 @@
       await wait(waitMs);
     }
     return { ok: true };
+  }
+
+  async function validateCurrentChat(expected = {}) {
+    const explicitError = detectOpenChatError();
+    if (explicitError) {
+      throw new Error(expected.phone
+        ? `Phone not found on WhatsApp: ${expected.phone}`
+        : `Chat not found: ${expected.chatName || "unknown"}`);
+    }
+
+    const messageBox = findMessageBox();
+    if (!messageBox) {
+      if (expected.phone) throw new Error(`Phone not found on WhatsApp: ${expected.phone}`);
+      throw new Error(`Chat not found: ${expected.chatName || "unknown"}`);
+    }
+
+    const currentTitle = cleanText(getCurrentChatTitle());
+    if (expected.chatName && !currentTitle.toLowerCase().includes(cleanText(expected.chatName).toLowerCase())) {
+      throw new Error(`Chat not found: ${expected.chatName}`);
+    }
+
+    return { ok: true, chat_title: currentTitle };
   }
 
   async function tryUnarchiveCurrentChat() {
@@ -594,6 +639,13 @@
 
       if (message.command?.action === "capture_recent_messages") {
         captureRecentMessages(Number(message.command.iterations) || 5, Number(message.command.waitMs) || 400)
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+        return true;
+      }
+
+      if (message.command?.action === "validate_current_chat") {
+        validateCurrentChat(message.command.expected || {})
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
         return true;
