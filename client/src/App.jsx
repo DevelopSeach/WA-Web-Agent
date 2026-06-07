@@ -9,6 +9,7 @@ export default function App() {
   const [apiToken, setApiToken] = useState(() => window.localStorage.getItem("wa-web-agent-api-token") || "");
   const [text, setText] = useState("שלום, זו הודעת בדיקה");
   const [phoneNumber, setPhoneNumber] = useState("972544506093");
+  const [groupName, setGroupName] = useState("");
   const [imagePath, setImagePath] = useState("C:\\WA_FILES\\image1.png");
   const [caption, setCaption] = useState("מצורפת תמונה");
   const [status, setStatus] = useState({ type: "idle", message: "" });
@@ -113,7 +114,7 @@ export default function App() {
         <div style={styles.panelHeader}>
           <div>
             <h2 style={styles.panelTitle}>שליחת פקודות ל־WhatsApp Web</h2>
-            <p style={styles.panelDescription}>הפקודות נשלחות להרחבה בכרום. לצורך שליחה למספר, כתוב מספר בפורמט בינלאומי, למשל `972544506093`.</p>
+            <p style={styles.panelDescription}>הפקודות נשלחות להרחבה בכרום. אפשר לשלוח למספר, לקבוצה פתוחה, או לחפש קבוצה לפי שם דרך WhatsApp Web.</p>
           </div>
           <button onClick={load} style={styles.secondaryButton}>רענון עכשיו</button>
         </div>
@@ -127,6 +128,11 @@ export default function App() {
           <label style={styles.field}>
             <span style={styles.fieldLabel}>מספר יעד</span>
             <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} style={styles.input} placeholder="972544506093" />
+          </label>
+
+          <label style={styles.field}>
+            <span style={styles.fieldLabel}>שם קבוצה / צ׳אט</span>
+            <input value={groupName} onChange={(e) => setGroupName(e.target.value)} style={styles.input} placeholder="שם הקבוצה כפי שמופיע ב־WhatsApp Web" />
           </label>
 
           <label style={{ ...styles.field, gridColumn: "1 / -1" }}>
@@ -143,6 +149,12 @@ export default function App() {
             </button>
             <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text", text })}>
               שלח לצ׳אט הפתוח
+            </button>
+            <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "send_text_to_group", chatName: groupName, text, send: true })}>
+              שלח לקבוצה לפי שם
+            </button>
+            <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "open_group", chatName: groupName })}>
+              פתח קבוצה לפי שם
             </button>
             <button style={styles.secondaryButton} onClick={() => handleCommand({ action: "focus_message_box" })}>
               פוקוס לתיבת הודעה

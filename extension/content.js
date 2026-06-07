@@ -264,6 +264,53 @@
     return boxes[boxes.length - 1] || null;
   }
 
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function findSearchBox() {
+    const selectors = [
+      "div[contenteditable='true'][role='textbox'][data-tab='3']",
+      "div[contenteditable='true'][role='textbox'][title]",
+      "div[contenteditable='true'][role='textbox']"
+    ];
+
+    for (const selector of selectors) {
+      const node = [...document.querySelectorAll(selector)].find((candidate) => {
+        const title = cleanText(candidate.getAttribute("title") || candidate.getAttribute("aria-label") || "");
+        return title.includes("Search") || title.includes("חיפוש") || title.includes("Search input") || selector === "div[contenteditable='true'][role='textbox'][data-tab='3']";
+      });
+      if (node) return node;
+    }
+
+    return null;
+  }
+
+  async function typeIntoContentEditable(node, value) {
+    node.focus();
+    document.execCommand("selectAll", false, null);
+    document.execCommand("delete", false, null);
+    node.textContent = "";
+    const eventOptions = { bubbles: true };
+    node.dispatchEvent(new InputEvent("beforeinput", { data: value, inputType: "insertText", ...eventOptions }));
+    document.execCommand("insertText", false, value);
+    node.dispatchEvent(new Event("input", eventOptions));
+    await wait(500);
+  }
+
+  function collectChatCandidates() {
+    return [
+      ...document.querySelectorAll("[role='gridcell']"),
+      ...document.querySelectorAll("[role='listitem']"),
+      ...document.querySelectorAll("div[data-testid*='cell-frame']")
+    ];
+  }
+
+  function findChatRowByName(chatName) {
+    const normalizedChatName = cleanText(chatName).toLowerCase();
+    return collectChatCandidates().find((node) => cleanText(node.innerText).toLowerCase().includes(normalizedChatName)) || null;
+  }
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || message.type !== "WA_CONTENT_COMMAND") return;
 
@@ -278,6 +325,30 @@
 
       if (message.command?.action === "get_state") {
         sendResponse({ ok: true, chat_title: getCurrentChatTitle(), url: location.href });
+        return true;
+      }
+
+      if (message.command?.action === "open_chat_by_name") {
+        const chatName = cleanText(message.command.chatName || "");
+        if (!chatName) throw new Error("Missing chat name");
+
+        const searchBox = findSearchBox();
+        if (!searchBox) throw new Error("Search box not found");
+
+        typeIntoContentEditable(searchBox, chatName)
+          .then(async () => {
+            const startedAt = Date.now();
+            let row = findChatRowByName(chatName);
+            while (!row && Date.now() - startedAt < 10000) {
+              await wait(250);
+              row = findChatRowByName(chatName);
+            }
+            if (!row) throw new Error(`Chat not found: ${chatName}`);
+            row.click();
+            await wait(1200);
+            sendResponse({ ok: true, chat_title: getCurrentChatTitle(), searched: chatName });
+          })
+          .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
         return true;
       }
 

@@ -151,6 +151,19 @@ async function openChatByPhone(tabId, phone) {
   return { ok: true, phone: normalizedPhone };
 }
 
+async function openChatByName(tabId, chatName) {
+  const tab = await chrome.tabs.get(tabId);
+  if (!tab.url?.startsWith("https://web.whatsapp.com/")) {
+    await chrome.tabs.update(tabId, { url: "https://web.whatsapp.com/" });
+    await waitForTabComplete(tabId);
+    await sleep(2500);
+  }
+
+  const result = await sendContentCommand(tabId, { action: "open_chat_by_name", chatName });
+  if (!result?.ok) throw new Error(result?.error || `Chat not found: ${chatName}`);
+  return result;
+}
+
 async function executeCommand(command) {
   const tab = await getWhatsAppTab();
   if (!tab) throw new Error("WhatsApp Web tab not found");
@@ -177,6 +190,9 @@ async function executeCommand(command) {
     case "open_chat":
       return await openChatByPhone(tabId, command.phone);
 
+    case "open_group":
+      return await openChatByName(tabId, command.chatName || command.groupName || "");
+
     case "send_text_to_phone":
       await openChatByPhone(tabId, command.phone);
       await sendContentCommand(tabId, { action: "focus_message_box" });
@@ -186,6 +202,16 @@ async function executeCommand(command) {
         await pressKey(tabId, "Enter");
       }
       return { ok: true, phone: normalizePhone(command.phone) };
+
+    case "send_text_to_group":
+      await openChatByName(tabId, command.chatName || command.groupName || "");
+      await sendContentCommand(tabId, { action: "focus_message_box" });
+      await sleep(300);
+      await insertText(tabId, command.text || "");
+      if (command.send !== false) {
+        await pressKey(tabId, "Enter");
+      }
+      return { ok: true, chat_name: command.chatName || command.groupName || "" };
 
     case "click":
       await clickAt(tabId, Number(command.x), Number(command.y));
