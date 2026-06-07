@@ -232,6 +232,7 @@
     return [
       document.querySelector("#main"),
       document.querySelector("[data-testid='conversation-panel-body']"),
+      document.querySelector("[data-testid='conversation-panel-messages']"),
       document.querySelector("[aria-label*='Message list' i]")
     ].filter(Boolean);
   }
@@ -242,7 +243,10 @@
   }
 
   function getSidebarRoot() {
-    return document.querySelector("#side");
+    return document.querySelector("#pane-side")
+      || document.querySelector("#side")
+      || document.querySelector("[data-testid='chat-list']")
+      || document.querySelector("[aria-label*='Chat list' i]");
   }
 
   function isSidebarGenericTitle(value) {
@@ -484,10 +488,12 @@
     return [
       ...side.querySelectorAll("[role='listitem']"),
       ...side.querySelectorAll("[role='gridcell']"),
+      ...side.querySelectorAll("[role='row']"),
       ...side.querySelectorAll("div[data-testid*='cell-frame']"),
       ...side.querySelectorAll("div[data-testid*='chat-list-item']"),
       ...side.querySelectorAll("div[data-testid*='cell-frame-container']"),
-      ...side.querySelectorAll("[aria-selected]")
+      ...side.querySelectorAll("[aria-selected]"),
+      ...side.querySelectorAll("[data-testid*='cell-frame-title']")
     ];
   }
 
@@ -591,10 +597,10 @@
     try {
       const sidebarRows = collectSidebarRows();
       const sidebarSamples = sidebarRows.slice(0, 5).map((row) => cleanText(row.innerText || row.textContent || "")).filter(Boolean);
-      const mainRoot = document.querySelector("#main");
-      const mainCandidates = mainRoot
-        ? mainRoot.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg']").length
-        : 0;
+      const chatRoots = getChatRoots();
+      const mainCandidates = chatRoots.reduce((total, root) => {
+        return total + root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [role='row']").length;
+      }, 0);
 
       sendToBackground({
         event_type: "capture_debug",
@@ -603,7 +609,9 @@
         payload: {
           sidebar_rows: sidebarRows.length,
           main_candidates: mainCandidates,
-          sidebar_samples: sidebarSamples
+          sidebar_samples: sidebarSamples,
+          sidebar_root_found: !!getSidebarRoot(),
+          chat_roots_found: chatRoots.length
         },
         captured_at: new Date().toISOString()
       });
@@ -1083,6 +1091,8 @@
       getChatRoots().forEach((root) => scan(root));
       scanSidebar();
     }, 2000);
+    window.setTimeout(emitCaptureDebug, 3000);
+    window.setTimeout(emitCaptureDebug, 8000);
     sendToBackground({ event_type: "extension_started", source: "whatsapp_web_extension", page_url: location.href, captured_at: new Date().toISOString() });
   };
 
