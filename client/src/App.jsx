@@ -429,12 +429,18 @@ function isGenericDisplayName(value) {
 
 function formatTarget(message) {
   const rawName = message.raw_json?.target_name || message.chat_title || "";
+  const senderName = String(message.sender || message.raw_json?.sender || "").trim();
   const name = isGenericDisplayName(rawName)
     ? (message.raw_json?.sender || message.raw_json?.sender_phone || "לא ידוע")
     : rawName;
   const type = message.raw_json?.target_type;
   const phone = message.raw_json?.target_phone;
   if (type === "group") return name;
+  if (senderName && name === senderName) {
+    return phone && phone !== message.raw_json?.sender_phone
+      ? `${name} יעד (${phone})`
+      : "החשבון המחובר";
+  }
   return phone ? `${name} (${phone})` : name;
 }
 
