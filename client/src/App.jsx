@@ -293,7 +293,7 @@ export default function App() {
                 <div>
                   <div style={styles.chatTitle}>{message.chat_title || "ללא שם"}</div>
                   <div style={styles.subtleText}>
-                    מאת: {message.sender || "לא ידוע"}
+                    מאת: {formatSender(message)}
                     {message.raw_json?.sender_phone ? ` (${message.raw_json.sender_phone})` : ""}
                     {!message.raw_json?.sender_phone && message.raw_json?.sender_key ? ` [ID: ${message.raw_json.sender_key}]` : ""}
                   </div>
@@ -423,6 +423,12 @@ function formatWhatsAppTime(message) {
   return formatTime(message.captured_at || message.created_at);
 }
 
+function formatSender(message) {
+  const resolved = String(message.raw_json?.sender_resolved_name || "").trim();
+  if (resolved) return resolved;
+  return message.sender || "לא ידוע";
+}
+
 function isTechnicalEvent(message) {
   return String(message?.event_type || "").trim() !== "message";
 }
@@ -433,7 +439,7 @@ function isGenericDisplayName(value) {
 }
 
 function formatTarget(message) {
-  const rawName = message.raw_json?.target_name || message.chat_title || "";
+  const rawName = message.raw_json?.target_resolved_name || message.raw_json?.target_name || message.chat_title || "";
   const senderName = String(message.sender || message.raw_json?.sender || "").trim();
   const name = isGenericDisplayName(rawName)
     ? (message.raw_json?.sender || message.raw_json?.sender_phone || "לא ידוע")

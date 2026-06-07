@@ -28,6 +28,100 @@ function normalizeUid(msg) {
   return msg.uid || msg.payload?.tag || `${msg.event_type || "event"}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function normalizePhoneCandidate(value) {
+  const text = String(value || "").trim();
+  const hasPlus = text.startsWith("+");
+  const digits = text.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 15) return null;
+  return hasPlus ? `+${digits}` : digits;
+}
+
+function isGenericDisplayName(value) {
+  const text = String(value || "").trim().toLowerCase();
+  return [
+    "",
+    "chats",
+    "channels",
+    "channel",
+    "updates in status",
+    "status",
+    "search",
+    "online",
+    "לא ידוע"
+  ].includes(text);
+}
+
+function parseJsonMaybe(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function chooseBestName(candidates) {
+  return candidates.find((candidate) => {
+    const text = String(candidate || "").trim();
+    return text && !isGenericDisplayName(text) && !normalizePhoneCandidate(text);
+  }) || null;
+}
+
+async function enrichRowsWithResolvedNames(rows) {
+  const needPhones = new Set();
+  const enrichedRows = rows.map((row) => {
+    const raw = parseJsonMaybe(row.raw_json);
+    const senderPhone = normalizePhoneCandidate(raw.sender_phone || row.sender || row.chat_title);
+    const targetPhone = normalizePhoneCandidate(raw.target_phone || raw.target_name || row.chat_title);
+    if (senderPhone) needPhones.add(senderPhone);
+    if (targetPhone) needPhones.add(targetPhone);
+    return { ...row, raw_json: raw };
+  });
+
+  if (!needPhones.size) return enrichedRows;
+
+  const [historyRows] = await pool.execute(`
+    SELECT sender, chat_title, raw_json
+    FROM wa_messages
+    WHERE event_type = 'message'
+    ORDER BY id DESC
+    LIMIT 5000
+  `);
+
+  const phoneToName = new Map();
+  historyRows.forEach((historyRow) => {
+    const raw = parseJsonMaybe(historyRow.raw_json);
+    const senderPhone = normalizePhoneCandidate(raw.sender_phone || historyRow.sender || historyRow.chat_title);
+    const targetPhone = normalizePhoneCandidate(raw.target_phone || raw.target_name || historyRow.chat_title);
+    const preferredName = chooseBestName([
+      raw.sender_resolved_name,
+      historyRow.sender,
+      raw.target_resolved_name,
+      raw.target_name,
+      historyRow.chat_title
+    ]);
+
+    if (preferredName && senderPhone && !phoneToName.has(senderPhone)) phoneToName.set(senderPhone, preferredName);
+    if (preferredName && targetPhone && !phoneToName.has(targetPhone)) phoneToName.set(targetPhone, preferredName);
+  });
+
+  return enrichedRows.map((row) => {
+    const raw = { ...row.raw_json };
+    const senderPhone = normalizePhoneCandidate(raw.sender_phone || row.sender || row.chat_title);
+    const targetPhone = normalizePhoneCandidate(raw.target_phone || raw.target_name || row.chat_title);
+
+    if (!raw.sender_resolved_name && senderPhone && phoneToName.has(senderPhone)) {
+      raw.sender_resolved_name = phoneToName.get(senderPhone);
+    }
+    if (!raw.target_resolved_name && targetPhone && phoneToName.has(targetPhone)) {
+      raw.target_resolved_name = phoneToName.get(targetPhone);
+    }
+
+    return { ...row, raw_json: raw };
+  });
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, service: "wa-web-agent-server" });
 });
@@ -125,6 +219,7 @@ app.get("/api/messages", async (req, res) => {
     }
   }
 
+  rows = await enrichRowsWithResolvedNames(rows);
   res.json({ ok: true, count: rows.length, messages: rows });
 });
 
@@ -153,6 +248,7 @@ app.get("/api/messages/export", requireToken, async (req, res) => {
     }
   }
 
+  rows = await enrichRowsWithResolvedNames(rows);
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename=\"wa-messages-${timestamp}.json\"`);

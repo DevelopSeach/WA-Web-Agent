@@ -606,6 +606,15 @@
     const text = cleanText(allText);
     if (!text) return null;
 
+    const unreadDirectDate = text.match(/^\d+\s+unread\s+messages?\s+(.+?)\s+(\d{1,2}[/.]\d{1,2}[/.]\d{2,4})\s+(.+?)\s+\d+$/i);
+    if (unreadDirectDate) {
+      return {
+        title: cleanText(unreadDirectDate[1]),
+        time: cleanText(unreadDirectDate[2]),
+        body: cleanText(unreadDirectDate[3])
+      };
+    }
+
     const unreadDirect = text.match(/^\d+\s+unread\s+messages?\s+(.+?)\s+(\d{1,2}:\d{2})\s+(.+?)\s+\d+$/i);
     if (unreadDirect) {
       return {
@@ -615,12 +624,31 @@
       };
     }
 
+    const groupDate = text.match(/^(.+?)\s+(\d{1,2}[/.]\d{1,2}[/.]\d{2,4})\s+(.+?)\s*:\s*(.+)$/);
+    if (groupDate) {
+      return {
+        title: cleanText(groupDate[1]),
+        time: cleanText(groupDate[2]),
+        sender: cleanText(groupDate[3]),
+        body: cleanText(groupDate[4])
+      };
+    }
+
     const direct = text.match(/^(.+?)\s+(\d{1,2}:\d{2})\s+(.+)$/);
     if (direct) {
       return {
         title: cleanText(direct[1]),
         time: cleanText(direct[2]),
         body: cleanText(direct[3])
+      };
+    }
+
+    const directDate = text.match(/^(.+?)\s+(\d{1,2}[/.]\d{1,2}[/.]\d{2,4})\s+(.+)$/);
+    if (directDate) {
+      return {
+        title: cleanText(directDate[1]),
+        time: cleanText(directDate[2]),
+        body: cleanText(directDate[3])
       };
     }
 
@@ -678,6 +706,7 @@
     if (isNoisySystemText(body)) return null;
     if (!rawTitle && !singleLineMeta?.time && !timeCandidate) return null;
     if (!isSavedContactName(title) && !normalizePhoneCandidate(title) && body.startsWith("\"")) return null;
+    if (cleanText(title) === cleanText(body)) return null;
 
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
     if (!uid || seen.has(uid)) return null;
