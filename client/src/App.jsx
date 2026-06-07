@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "/").replace(/\/$/, "");
+const API_BASE = resolveApiBase(import.meta.env.VITE_API_BASE_URL || "/");
 
 export default function App() {
   const [messages, setMessages] = useState([]);
@@ -19,13 +19,13 @@ export default function App() {
 
   async function load() {
     try {
-      const msgUrl = new URL(`${API_BASE}/api/messages`);
+      const msgUrl = new URL("/api/messages", API_BASE);
       msgUrl.searchParams.set("limit", "100");
       if (chatFilter.trim()) msgUrl.searchParams.set("chat", chatFilter.trim());
 
       const [messagesResponse, commandsResponse] = await Promise.all([
         fetch(msgUrl),
-        fetch(`${API_BASE}/api/commands`, { headers: { "x-api-token": apiToken } })
+        fetch(new URL("/api/commands", API_BASE), { headers: { "x-api-token": apiToken } })
       ]);
 
       const messagePayload = await messagesResponse.json();
@@ -41,7 +41,7 @@ export default function App() {
 
   async function createCommand(command) {
     setStatus({ type: "working", message: "שולח פקודה..." });
-    const response = await fetch(`${API_BASE}/api/commands`, {
+    const response = await fetch(new URL("/api/commands", API_BASE), {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-token": apiToken },
       body: JSON.stringify(command)
@@ -258,6 +258,13 @@ export default function App() {
       </section>
     </div>
   );
+}
+
+function resolveApiBase(rawBase) {
+  const base = String(rawBase || "/").trim();
+  if (/^https?:\/\//i.test(base)) return base.replace(/\/$/, "");
+  if (typeof window !== "undefined") return new URL(base, window.location.origin).toString().replace(/\/$/, "");
+  return "http://localhost";
 }
 
 function formatTime(value) {
