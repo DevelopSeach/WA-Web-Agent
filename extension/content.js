@@ -102,11 +102,13 @@
     const titleText = cleanText(title);
     const joined = cleanText(`${titleText} ${timeCandidate || ""}`);
     if (!text) return true;
+    if (isTypingValue(titleText)) return true;
     if (isTypingValue(text)) return true;
     if (text === "…" || text === "...") return true;
     if (text === titleText) return true;
     if (joined && text === joined) return true;
     if (isMostlyNumeric(titleText) && isMostlyNumeric(text) && text.length <= 2) return true;
+    if (isMostlyNumeric(titleText) && !timeCandidate && isMostlyNumeric(text) && text.length <= 2) return true;
     return false;
   }
 
@@ -583,6 +585,7 @@
     const splitTitle = splitTrailingTime(rawTitle);
     const title = splitTitle.text || singleLineMeta?.title || inferSidebarTitle(lines) || rawTitle;
     if (isSidebarGenericTitle(title)) return null;
+    if (isTypingValue(title)) return null;
 
     const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || splitTitle.time || singleLineMeta?.time || "";
     const unreadNode = row.querySelector("[aria-label*='unread' i], [data-testid*='icon-unread'], [data-testid*='alert']");
@@ -600,6 +603,7 @@
     );
     const body = stripUnreadNoise(meta.body || snippetCandidate || fallbackBody || "");
     if (isWeakSidebarBody(body, title, timeCandidate)) return null;
+    if (isMostlyNumeric(title) && !timeCandidate && isMostlyNumeric(body) && body.length <= 2) return null;
 
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
     if (!uid || seen.has(uid)) return null;
