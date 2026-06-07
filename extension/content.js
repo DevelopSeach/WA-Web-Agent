@@ -507,10 +507,14 @@
   function extractSidebarRowMessage(row) {
     if (!row || !getSidebarRoot()?.contains(row)) return null;
 
-    const allText = cleanText(row.innerText || row.textContent || "");
+    const rawSidebarText = String(row.innerText || row.textContent || "");
+    const allText = cleanText(rawSidebarText);
     if (!allText) return null;
 
-    const lines = allText.split("\n").map((value) => cleanText(value)).filter(Boolean);
+    const lines = rawSidebarText
+      .split("\n")
+      .map((value) => cleanText(value))
+      .filter(Boolean);
     if (!lines.length) return null;
 
     const titleNode = row.querySelector("span[title], div[title]");
