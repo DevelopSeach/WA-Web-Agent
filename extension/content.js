@@ -608,6 +608,35 @@
     return { ok: true };
   }
 
+  async function sendTextInCurrentChat(text, send = true) {
+    const prepared = await prepareCurrentChatForSend();
+    if (!prepared?.ok) throw new Error("Message box not found");
+
+    const box = findMessageBox();
+    if (!box) throw new Error("Message box not found");
+
+    const value = String(text || "");
+    document.execCommand("selectAll", false, null);
+    document.execCommand("delete", false, null);
+    box.textContent = "";
+
+    const eventOptions = { bubbles: true };
+    box.dispatchEvent(new InputEvent("beforeinput", { data: value, inputType: "insertText", ...eventOptions }));
+    document.execCommand("insertText", false, value);
+    box.dispatchEvent(new Event("input", eventOptions));
+
+    await wait(250);
+
+    if (send !== false) {
+      box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true }));
+      box.dispatchEvent(new KeyboardEvent("keypress", { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true }));
+      box.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true }));
+      await wait(250);
+    }
+
+    return { ok: true };
+  }
+
   async function tryUnarchiveCurrentChat() {
     const buttons = [
       ...document.querySelectorAll("[aria-label]"),
@@ -688,6 +717,13 @@
 
       if (message.command?.action === "prepare_current_chat_for_send") {
         prepareCurrentChatForSend()
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+        return true;
+      }
+
+      if (message.command?.action === "send_text_in_current_chat") {
+        sendTextInCurrentChat(message.command.text || "", message.command.send !== false)
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
         return true;

@@ -164,6 +164,14 @@ async function prepareCurrentChatForSend(tabId) {
   return result;
 }
 
+async function sendTextInCurrentChat(tabId, text, send = true) {
+  const result = await sendContentCommand(tabId, { action: "send_text_in_current_chat", text, send });
+  if (!result?.ok) {
+    throw new Error(result?.error || "Could not send text in current chat");
+  }
+  return result;
+}
+
 async function openChatByPhone(tabId, phone) {
   const normalizedPhone = normalizePhone(phone);
   const params = new URLSearchParams({ phone: normalizedPhone });
@@ -227,9 +235,7 @@ async function executeCommand(command) {
       return { ok: true };
 
     case "send_text":
-      await prepareCurrentChatForSend(tabId);
-      await insertText(tabId, command.text || "");
-      if (command.enter !== false) await pressKey(tabId, "Enter");
+      await sendTextInCurrentChat(tabId, command.text || "", command.enter !== false);
       await sleep(1200);
       await captureRecentMessages(tabId);
       return { ok: true };
@@ -245,24 +251,14 @@ async function executeCommand(command) {
 
     case "send_text_to_phone":
       await openChatByPhone(tabId, command.phone);
-      await prepareCurrentChatForSend(tabId);
-      await sleep(300);
-      await insertText(tabId, command.text || "");
-      if (command.send !== false) {
-        await pressKey(tabId, "Enter");
-      }
+      await sendTextInCurrentChat(tabId, command.text || "", command.send !== false);
       await sleep(1200);
       await captureRecentMessages(tabId);
       return { ok: true, phone: normalizePhone(command.phone) };
 
     case "send_text_to_archived_phone": {
       await openChatByPhone(tabId, command.phone);
-      await prepareCurrentChatForSend(tabId);
-      await sleep(300);
-      await insertText(tabId, command.text || "");
-      if (command.send !== false) {
-        await pressKey(tabId, "Enter");
-      }
+      await sendTextInCurrentChat(tabId, command.text || "", command.send !== false);
       await sleep(1200);
       await captureRecentMessages(tabId);
       const unarchiveResult = command.makeVisible === true ? await tryUnarchiveCurrentChat(tabId) : null;
@@ -271,24 +267,14 @@ async function executeCommand(command) {
 
     case "send_text_to_group":
       await openChatByName(tabId, command.chatName || command.groupName || "");
-      await prepareCurrentChatForSend(tabId);
-      await sleep(300);
-      await insertText(tabId, command.text || "");
-      if (command.send !== false) {
-        await pressKey(tabId, "Enter");
-      }
+      await sendTextInCurrentChat(tabId, command.text || "", command.send !== false);
       await sleep(1200);
       await captureRecentMessages(tabId);
       return { ok: true, chat_name: command.chatName || command.groupName || "" };
 
     case "send_text_to_archived_group": {
       await openChatByNameWithOptions(tabId, command.chatName || command.groupName || "", { includeArchived: true });
-      await prepareCurrentChatForSend(tabId);
-      await sleep(300);
-      await insertText(tabId, command.text || "");
-      if (command.send !== false) {
-        await pressKey(tabId, "Enter");
-      }
+      await sendTextInCurrentChat(tabId, command.text || "", command.send !== false);
       await sleep(1200);
       await captureRecentMessages(tabId);
       const unarchiveResult = command.makeVisible === true ? await tryUnarchiveCurrentChat(tabId) : null;
