@@ -76,7 +76,11 @@ function isNoisyMessageText(value) {
   if (!text) return true;
   if ([
     "online",
-    "business account"
+    "business account",
+    "typing…",
+    "typing...",
+    "מקליד…",
+    "מקליד..."
   ].includes(text)) return true;
 
   return [
@@ -86,6 +90,7 @@ function isNoisyMessageText(value) {
     "last seen today",
     "last seen ",
     "messages and calls are end-to-end encrypted",
+    " is typing",
     "click here for contact info",
     "click here for group info",
     "changed this group's icon",

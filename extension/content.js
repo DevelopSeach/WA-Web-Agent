@@ -326,6 +326,10 @@
       "photo",
       "video",
       "business account",
+      "typing…",
+      "typing...",
+      "מקליד…",
+      "מקליד...",
       "monday",
       "tuesday",
       "wednesday",
@@ -338,6 +342,7 @@
 
     return [
       "messages and calls are end-to-end encrypted",
+      " is typing",
       "click here for contact info",
       "click here for group info",
       "changed this group's icon",
