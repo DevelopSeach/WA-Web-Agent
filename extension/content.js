@@ -720,9 +720,7 @@
     const nodes = [];
     const scanSelectors = "[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [data-testid*='msg-container'], .message-in, .message-out";
     if (root?.matches?.(scanSelectors)) nodes.push(root);
-    if (root?.querySelectorAll) {
-      root.querySelectorAll(scanSelectors).forEach((n) => nodes.push(n));
-    }
+    deepQueryAll(scanSelectors, root).forEach((n) => nodes.push(n));
     nodes.forEach((node) => {
       const msg = extractMessage(node);
       if (msg && shouldEmitRecord(msg)) sendToBackground(msg);
@@ -994,7 +992,7 @@
       const sidebarSamples = sidebarRows.slice(0, 5).map((row) => cleanText(row.innerText || row.textContent || "")).filter(Boolean);
       const chatRoots = getChatRoots();
       const mainCandidates = chatRoots.reduce((total, root) => {
-        return total + root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [data-testid*='msg-container'], .message-in, .message-out, [role='row']").length;
+        return total + deepQueryAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [data-testid*='msg-container'], .message-in, .message-out, [role='row']", root).length;
       }, 0);
 
       sendToBackground({
