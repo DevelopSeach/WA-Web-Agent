@@ -215,6 +215,14 @@ function shouldExposeRow(row) {
   return true;
 }
 
+function isDebugEventRow(row) {
+  const eventType = String(row.event_type || "").trim().toLowerCase();
+  const source = String(row.source || "").trim().toLowerCase();
+  if (!eventType) return false;
+  if (eventType !== "message") return true;
+  return source.includes("debug") || source.includes("page_hook") || source.includes("store");
+}
+
 async function enrichRowsWithResolvedNames(rows) {
   const needPhones = new Set();
   const enrichedRows = rows.map((row) => {
@@ -409,6 +417,15 @@ app.get("/api/messages", async (req, res) => {
   rows = await enrichRowsWithResolvedNames(rows);
   rows = rows.filter(shouldExposeRow);
   res.json({ ok: true, count: rows.length, messages: rows });
+});
+
+app.get("/api/domdebug", async (req, res) => {
+  const parsedLimit = Number(req.query.limit || 100);
+  const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 500)) : 100;
+  const [rows] = await pool.execute(`SELECT * FROM wa_messages ORDER BY id DESC LIMIT ${limit}`);
+  const enriched = await enrichRowsWithResolvedNames(rows);
+  const debugRows = enriched.filter(isDebugEventRow);
+  res.json({ ok: true, count: debugRows.length, messages: debugRows });
 });
 
 app.get("/api/messages/export", requireToken, async (req, res) => {

@@ -20,6 +20,17 @@
     const data = event.data;
     if (!data || data.source !== "WA_PAGE_HOOK") return;
 
+    if (data.event_type === "store_message" && data.payload) {
+      const payload = {
+        ...data.payload,
+        event_type: "message",
+        source: data.payload.source || "whatsapp_web_extension_store",
+        captured_at: data.payload.captured_at || new Date().toISOString()
+      };
+      if (shouldEmitRecord(payload)) sendToBackground(payload);
+      return;
+    }
+
     sendToBackground({
       event_type: data.event_type || "page_hook",
       source: "whatsapp_web_extension_page_hook",
@@ -1011,6 +1022,53 @@
     } catch {}
   }
 
+  function emitDomDebugSnapshot(reason = "manual") {
+    try {
+      const chatRoots = getChatRoots();
+      const conversationSamples = deepQueryAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [data-testid*='msg-container'], .message-in, .message-out", document.body)
+        .slice(0, 15)
+        .map((node) => cleanText(node.innerText || node.textContent || ""))
+        .filter(Boolean)
+        .slice(0, 8);
+      const sidebarSamples = collectSidebarRows()
+        .slice(0, 8)
+        .map((row) => cleanText(row.innerText || row.textContent || ""))
+        .filter(Boolean);
+      const activeElement = document.activeElement;
+
+      sendToBackground({
+        event_type: "dom_debug",
+        source: "whatsapp_web_extension_debug",
+        text: `dom_debug reason=${reason} chat_roots=${chatRoots.length} conversation_samples=${conversationSamples.length} sidebar_rows=${sidebarSamples.length}`,
+        payload: {
+          reason,
+          url: location.href,
+          title: document.title,
+          current_chat_title: getCurrentChatTitle(),
+          header_text: getHeaderText(),
+          chat_roots_found: chatRoots.length,
+          sidebar_root_found: !!getSidebarRoot(),
+          conversation_samples: conversationSamples,
+          sidebar_samples: sidebarSamples,
+          active_element: activeElement ? {
+            tag: activeElement.tagName,
+            title: cleanText(activeElement.getAttribute?.("title") || ""),
+            aria_label: cleanText(activeElement.getAttribute?.("aria-label") || ""),
+            data_testid: cleanText(activeElement.getAttribute?.("data-testid") || "")
+          } : null
+        },
+        captured_at: new Date().toISOString()
+      });
+    } catch (error) {
+      sendToBackground({
+        event_type: "dom_debug_error",
+        source: "whatsapp_web_extension_debug",
+        text: String(error?.message || error),
+        captured_at: new Date().toISOString()
+      });
+    }
+  }
+
   function sendToBackground(payload) {
     chrome.runtime.sendMessage({ type: "WA_EVENT", payload });
   }
@@ -1597,6 +1655,8 @@
     }, 2000);
     window.setTimeout(emitCaptureDebug, 3000);
     window.setTimeout(emitCaptureDebug, 8000);
+    window.setTimeout(() => emitDomDebugSnapshot("startup_3s"), 3000);
+    window.setTimeout(() => emitDomDebugSnapshot("startup_8s"), 8000);
     sendToBackground({ event_type: "extension_started", source: "whatsapp_web_extension", page_url: location.href, captured_at: new Date().toISOString() });
   };
 
