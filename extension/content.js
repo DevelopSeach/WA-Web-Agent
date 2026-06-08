@@ -494,7 +494,9 @@
 
   function findMessageElement(el) {
     if (!el || !el.closest) return null;
-    return el.closest("[data-id]")
+    return el.closest(".message-in, .message-out")
+      || el.closest("[data-testid*='msg-container']")
+      || el.closest("[data-id]")
       || el.closest("[data-pre-plain-text]")
       || el.closest("[data-testid*='msg']")
       || el.closest(".copyable-text")
@@ -659,7 +661,8 @@
     const inferredDirection = direction === "unknown"
       ? ((parsed.sender || inferredMeta.sender) ? "incoming" : "unknown")
       : direction;
-    const uid = messageEl.getAttribute("data-id") || buildSyntheticUid(messageEl, prePlainText, rawText, inferredDirection);
+    const descendantId = messageEl.querySelector?.("[data-id]")?.getAttribute?.("data-id") || "";
+    const uid = messageEl.getAttribute("data-id") || descendantId || buildSyntheticUid(messageEl, prePlainText, rawText, inferredDirection);
     if (!uid) return null;
     if (!rawText && !prePlainText && !messageEl.querySelector("img, video, audio, a[href], [data-icon]")) return null;
     if (isNoisySystemText(rawText)) return null;
@@ -715,9 +718,10 @@
   function scan(root) {
     if (root !== document.body && !isInConversationPanel(root)) return;
     const nodes = [];
-    if (root?.matches?.("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg']")) nodes.push(root);
+    const scanSelectors = "[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [data-testid*='msg-container'], .message-in, .message-out";
+    if (root?.matches?.(scanSelectors)) nodes.push(root);
     if (root?.querySelectorAll) {
-      root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg']").forEach((n) => nodes.push(n));
+      root.querySelectorAll(scanSelectors).forEach((n) => nodes.push(n));
     }
     nodes.forEach((node) => {
       const msg = extractMessage(node);
@@ -990,7 +994,7 @@
       const sidebarSamples = sidebarRows.slice(0, 5).map((row) => cleanText(row.innerText || row.textContent || "")).filter(Boolean);
       const chatRoots = getChatRoots();
       const mainCandidates = chatRoots.reduce((total, root) => {
-        return total + root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [role='row']").length;
+        return total + root.querySelectorAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [data-testid*='msg-container'], .message-in, .message-out, [role='row']").length;
       }, 0);
 
       sendToBackground({
