@@ -620,12 +620,32 @@
     const text = cleanText(allText);
     if (!text) return null;
 
+    const unreadGroupDate = text.match(/^\d+\s+unread\s+messages?\s+(.+?)\s+(\d{1,2}[/.]\d{1,2}[/.]\d{2,4})\s+(.+?)\s*:\s*(.+?)\s+\d+$/i);
+    if (unreadGroupDate) {
+      return {
+        title: cleanText(unreadGroupDate[1]),
+        time: cleanText(unreadGroupDate[2]),
+        sender: cleanText(unreadGroupDate[3]),
+        body: cleanText(unreadGroupDate[4])
+      };
+    }
+
     const unreadDirectDate = text.match(/^\d+\s+unread\s+messages?\s+(.+?)\s+(\d{1,2}[/.]\d{1,2}[/.]\d{2,4})\s+(.+?)\s+\d+$/i);
     if (unreadDirectDate) {
       return {
         title: cleanText(unreadDirectDate[1]),
         time: cleanText(unreadDirectDate[2]),
         body: cleanText(unreadDirectDate[3])
+      };
+    }
+
+    const unreadGroup = text.match(/^\d+\s+unread\s+messages?\s+(.+?)\s+(\d{1,2}:\d{2})\s+(.+?)\s*:\s*(.+?)\s+\d+$/i);
+    if (unreadGroup) {
+      return {
+        title: cleanText(unreadGroup[1]),
+        time: cleanText(unreadGroup[2]),
+        sender: cleanText(unreadGroup[3]),
+        body: cleanText(unreadGroup[4])
       };
     }
 
