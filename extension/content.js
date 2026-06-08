@@ -36,6 +36,51 @@
       .trim();
   }
 
+  function collectRoots(root = document) {
+    const roots = [];
+    const queue = [root];
+    const visited = new Set();
+
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || visited.has(current)) continue;
+      visited.add(current);
+      roots.push(current);
+
+      let elements = [];
+      if (current.querySelectorAll) {
+        elements = [...current.querySelectorAll("*")];
+      } else if (current.children) {
+        elements = [...current.children];
+      }
+
+      elements.forEach((element) => {
+        if (element?.shadowRoot) queue.push(element.shadowRoot);
+      });
+    }
+
+    return roots;
+  }
+
+  function deepQueryAll(selectors, root = document) {
+    const selectorList = Array.isArray(selectors) ? selectors : [selectors];
+    const results = [];
+    const seenNodes = new Set();
+
+    collectRoots(root).forEach((currentRoot) => {
+      selectorList.forEach((selector) => {
+        if (!selector || !currentRoot.querySelectorAll) return;
+        currentRoot.querySelectorAll(selector).forEach((node) => {
+          if (seenNodes.has(node)) return;
+          seenNodes.add(node);
+          results.push(node);
+        });
+      });
+    });
+
+    return results;
+  }
+
   function stableJson(value) {
     try {
       return JSON.stringify(value || null);
@@ -92,7 +137,7 @@
   }
 
   function getCurrentChatTitle() {
-    const header = document.querySelector("header");
+    const header = deepQueryAll("header")[0];
     if (!header) return "";
     const titleNode = header.querySelector("span[title]");
     if (titleNode) return titleNode.getAttribute("title") || "";
@@ -100,7 +145,7 @@
   }
 
   function getHeaderText() {
-    const header = document.querySelector("header");
+    const header = deepQueryAll("header")[0];
     return header ? cleanText(header.innerText) : "";
   }
 
@@ -250,7 +295,7 @@
     const candidates = new Set();
     extractPhoneCandidates(location.href).forEach((phone) => candidates.add(phone));
 
-    const header = document.querySelector("header");
+    const header = deepQueryAll("header")[0];
     if (header) {
       extractPhoneCandidates(header.innerText || "").forEach((phone) => candidates.add(phone));
       header.querySelectorAll("[title], [aria-label]").forEach((node) => {
@@ -279,7 +324,7 @@
   }
 
   function extractTargetName() {
-    const header = document.querySelector("header");
+    const header = deepQueryAll("header")[0];
     if (!header) return "";
 
     const titleCandidates = [
@@ -331,13 +376,13 @@
 
   function getChatRoots() {
     const candidates = [
-      document.querySelector("#main"),
-      document.querySelector("main"),
-      document.querySelector("[data-testid='conversation-panel-body']"),
-      document.querySelector("[data-testid='conversation-panel-messages']"),
-      document.querySelector("[data-testid*='conversation-panel']"),
-      document.querySelector("[data-testid*='conversation']"),
-      document.querySelector("[aria-label*='Message list' i]"),
+      ...deepQueryAll("#main"),
+      ...deepQueryAll("main"),
+      ...deepQueryAll("[data-testid='conversation-panel-body']"),
+      ...deepQueryAll("[data-testid='conversation-panel-messages']"),
+      ...deepQueryAll("[data-testid*='conversation-panel']"),
+      ...deepQueryAll("[data-testid*='conversation']"),
+      ...deepQueryAll("[aria-label*='Message list' i]"),
       document.body
     ].filter(Boolean);
 
@@ -378,10 +423,10 @@
   }
 
   function getSidebarRoot() {
-    return document.querySelector("#pane-side")
-      || document.querySelector("#side")
-      || document.querySelector("[data-testid='chat-list']")
-      || document.querySelector("[aria-label*='Chat list' i]");
+    return deepQueryAll("#pane-side")[0]
+      || deepQueryAll("#side")[0]
+      || deepQueryAll("[data-testid='chat-list']")[0]
+      || deepQueryAll("[aria-label*='Chat list' i]")[0];
   }
 
   function isSidebarGenericTitle(value) {
@@ -1147,7 +1192,7 @@
   }
 
   function findHeaderInfoTrigger() {
-    const header = document.querySelector("header");
+    const header = deepQueryAll("header")[0];
     if (!header) return null;
     const candidates = [
       ...header.querySelectorAll("[role='button']"),
@@ -1163,10 +1208,10 @@
 
   function findProfilePanel() {
     const panels = [
-      ...document.querySelectorAll("[role='dialog']"),
-      ...document.querySelectorAll("[data-testid*='drawer']"),
-      ...document.querySelectorAll("[data-testid*='panel']"),
-      ...document.querySelectorAll("aside")
+      ...deepQueryAll("[role='dialog']"),
+      ...deepQueryAll("[data-testid*='drawer']"),
+      ...deepQueryAll("[data-testid*='panel']"),
+      ...deepQueryAll("aside")
     ];
 
     return panels.find((panel) => {
