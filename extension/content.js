@@ -325,6 +325,7 @@
       "unread",
       "photo",
       "video",
+      "business account",
       "monday",
       "tuesday",
       "wednesday",
@@ -340,6 +341,8 @@
       "click here for contact info",
       "click here for group info",
       "changed this group's icon",
+      "reacted to:",
+      "you deleted this message",
       "invite to group via link",
       "add members",
       "add description",
@@ -696,6 +699,7 @@
     const title = splitTitle.text || singleLineMeta?.title || inferSidebarTitle(lines) || rawTitle;
     if (isSidebarGenericTitle(title)) return null;
     if (isTypingValue(title)) return null;
+    if (isNoisySystemText(title)) return null;
 
     const timeCandidate = lines.find((line) => /^(\d{1,2}:\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})$/.test(line)) || splitTitle.time || singleLineMeta?.time || "";
     const unreadNode = row.querySelector("[aria-label*='unread' i], [data-testid*='icon-unread'], [data-testid*='alert']");
@@ -715,6 +719,7 @@
     if (isWeakSidebarBody(body, title, timeCandidate)) return null;
     if (isMostlyNumeric(title) && !timeCandidate && isMostlyNumeric(body) && body.length <= 2) return null;
     if (isNoisySystemText(body)) return null;
+    if (singleLineMeta?.sender && isNoisySystemText(singleLineMeta.sender)) return null;
     if (!rawTitle && !singleLineMeta?.time && !timeCandidate) return null;
     if (!isSavedContactName(title) && !normalizePhoneCandidate(title) && body.startsWith("\"")) return null;
     if (cleanText(title) === cleanText(body)) return null;

@@ -89,6 +89,8 @@ function isNoisyMessageText(value) {
     "click here for contact info",
     "click here for group info",
     "changed this group's icon",
+    "reacted to:",
+    "you deleted this message",
     "invite to group via link",
     "add members",
     "add description",
@@ -108,6 +110,7 @@ function isMalformedSidebarRow(row) {
   const text = String(row.message_text || raw.text || "").trim();
 
   if (!title && !sender) return true;
+  if (isNoisyMessageText(title) || isNoisyMessageText(sender)) return true;
   if (isNoisyMessageText(text)) return true;
   if (title && text && title === text) return true;
   if (sender && text && sender === text) return true;
@@ -119,9 +122,11 @@ function shouldExposeRow(row) {
   if (String(row.event_type || "") !== "message") return true;
   const raw = parseJsonMaybe(row.raw_json);
   const title = String(row.chat_title || raw.chat_title || "").trim();
+  const sender = String(row.sender || raw.sender || "").trim();
   const targetName = String(raw.target_name || "").trim();
   const text = String(row.message_text || raw.text || "").trim();
 
+  if (isNoisyMessageText(title) || isNoisyMessageText(sender)) return false;
   if (isNoisyMessageText(text)) return false;
   if (isGenericDisplayName(title) || isGenericDisplayName(targetName)) return false;
   if (isMalformedSidebarRow(row)) return false;
