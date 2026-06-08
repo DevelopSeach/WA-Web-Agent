@@ -71,6 +71,83 @@ function chooseBestName(candidates) {
   }) || null;
 }
 
+function hasReplyMetadata(message) {
+  const reply = message?.reply_to;
+  return !!(reply && (reply.text || reply.snippet || reply.sender));
+}
+
+function hasReactionMetadata(message) {
+  return Array.isArray(message?.reactions) && message.reactions.length > 0;
+}
+
+function messageSubtypeRank(value) {
+  const subtype = String(value || "").trim().toLowerCase();
+  if (subtype === "reply+reaction") return 3;
+  if (subtype === "reaction") return 2;
+  if (subtype === "reply") return 1;
+  return 0;
+}
+
+function isDomSource(value) {
+  return String(value || "").trim() === "whatsapp_web_extension_dom";
+}
+
+function choosePreferredValue(incomingValue, existingValue, { preferIncoming = false } = {}) {
+  const incoming = String(incomingValue || "").trim();
+  const existing = String(existingValue || "").trim();
+  if (preferIncoming && incoming) return incoming;
+  if (incoming && !isGenericDisplayName(incoming)) return incoming;
+  if (existing) return existing;
+  return incoming || existing || null;
+}
+
+function buildMergedMessage(existingRow, incomingMessage) {
+  const existingRaw = parseJsonMaybe(existingRow.raw_json);
+  const incomingRaw = { ...incomingMessage };
+  const incomingSubtype = incomingRaw.message_subtype || "plain";
+  const existingSubtype = existingRaw.message_subtype || "plain";
+  const preferIncoming = isDomSource(incomingMessage.source) && !isDomSource(existingRow.source);
+
+  const mergedRaw = {
+    ...existingRaw,
+    ...incomingRaw,
+    uid: existingRow.message_uid,
+    chat_title: choosePreferredValue(incomingMessage.chat_title, existingRow.chat_title || existingRaw.chat_title, { preferIncoming }),
+    sender: choosePreferredValue(incomingMessage.sender, existingRow.sender || existingRaw.sender, { preferIncoming }),
+    text: choosePreferredValue(incomingMessage.text, existingRow.message_text || existingRaw.text, { preferIncoming }),
+    sent_at_text: choosePreferredValue(incomingMessage.sent_at_text, existingRow.sent_at_text || existingRaw.sent_at_text, { preferIncoming }),
+    target_name: choosePreferredValue(incomingMessage.target_name, existingRaw.target_name, { preferIncoming }),
+    target_phone: choosePreferredValue(incomingMessage.target_phone, existingRaw.target_phone, { preferIncoming }),
+    sender_phone: choosePreferredValue(incomingMessage.sender_phone, existingRaw.sender_phone, { preferIncoming }),
+    sender_resolved_name: choosePreferredValue(incomingMessage.sender_resolved_name, existingRaw.sender_resolved_name, { preferIncoming }),
+    target_resolved_name: choosePreferredValue(incomingMessage.target_resolved_name, existingRaw.target_resolved_name, { preferIncoming }),
+    target_key: choosePreferredValue(incomingMessage.target_key, existingRaw.target_key, { preferIncoming }),
+    sender_key: choosePreferredValue(incomingMessage.sender_key, existingRaw.sender_key, { preferIncoming }),
+    target_type: choosePreferredValue(incomingMessage.target_type, existingRaw.target_type, { preferIncoming }),
+    page_url: choosePreferredValue(incomingMessage.page_url, existingRaw.page_url, { preferIncoming }),
+    captured_at: choosePreferredValue(incomingMessage.captured_at, existingRaw.captured_at, { preferIncoming }) || new Date().toISOString(),
+    ack: incomingMessage.ack || existingRaw.ack || null,
+    reply_to: hasReplyMetadata(incomingMessage) ? incomingMessage.reply_to : (existingRaw.reply_to || null),
+    reactions: hasReactionMetadata(incomingMessage) ? incomingMessage.reactions : (existingRaw.reactions || []),
+    media: Array.isArray(incomingMessage.media) && incomingMessage.media.length ? incomingMessage.media : (existingRaw.media || []),
+    message_subtype: messageSubtypeRank(incomingSubtype) >= messageSubtypeRank(existingSubtype) ? incomingSubtype : existingSubtype,
+    source: preferIncoming ? incomingMessage.source : (existingRaw.source || incomingMessage.source || existingRow.source)
+  };
+
+  return {
+    source: preferIncoming ? incomingMessage.source : (existingRow.source || incomingMessage.source || "whatsapp_web_extension"),
+    chat_title: mergedRaw.chat_title || null,
+    sender: mergedRaw.sender || null,
+    direction: choosePreferredValue(incomingMessage.direction, existingRow.direction || existingRaw.direction, { preferIncoming }) || null,
+    sent_at_text: mergedRaw.sent_at_text || null,
+    captured_at: mergedRaw.captured_at || new Date().toISOString(),
+    message_text: mergedRaw.text || null,
+    media_json: JSON.stringify(mergedRaw.media || []),
+    reactions_json: JSON.stringify(mergedRaw.reactions || []),
+    raw_json: JSON.stringify(mergedRaw)
+  };
+}
+
 function isNoisyMessageText(value) {
   const text = String(value || "").trim().toLowerCase();
   if (!text) return true;
@@ -204,7 +281,7 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
 
   if ((msg.event_type || "") === "message") {
     const [existingRows] = await pool.execute(
-      `SELECT id, message_uid
+      `SELECT id, message_uid, source, chat_title, sender, direction, sent_at_text, message_text, raw_json
        FROM wa_messages
        WHERE event_type = 'message'
          AND message_uid <> ?
@@ -224,7 +301,45 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
     );
 
     if (existingRows.length) {
-      return res.json({ ok: true, saved: false, duplicate: true, uid: existingRows[0].message_uid, duplicate_of: existingRows[0].id });
+      const merged = buildMergedMessage(existingRows[0], msg);
+      const hasUsefulIncomingUpdate = hasReplyMetadata(msg)
+        || hasReactionMetadata(msg)
+        || isDomSource(msg.source)
+        || String(msg.message_subtype || "").trim().toLowerCase() !== "plain";
+
+      if (!hasUsefulIncomingUpdate) {
+        return res.json({ ok: true, saved: false, duplicate: true, uid: existingRows[0].message_uid, duplicate_of: existingRows[0].id });
+      }
+
+      await pool.execute(
+        `UPDATE wa_messages
+         SET source = ?,
+             chat_title = ?,
+             sender = ?,
+             direction = ?,
+             sent_at_text = ?,
+             captured_at = ?,
+             message_text = ?,
+             media_json = CAST(? AS JSON),
+             reactions_json = CAST(? AS JSON),
+             raw_json = CAST(? AS JSON)
+         WHERE id = ?`,
+        [
+          merged.source,
+          merged.chat_title,
+          merged.sender,
+          merged.direction,
+          merged.sent_at_text,
+          new Date(merged.captured_at),
+          merged.message_text,
+          merged.media_json,
+          merged.reactions_json,
+          merged.raw_json,
+          existingRows[0].id
+        ]
+      );
+
+      return res.json({ ok: true, saved: true, updated_existing: true, uid: existingRows[0].message_uid, updated_id: existingRows[0].id });
     }
   }
 
