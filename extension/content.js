@@ -330,17 +330,51 @@
   }
 
   function getChatRoots() {
-    return [
+    const candidates = [
       document.querySelector("#main"),
+      document.querySelector("main"),
       document.querySelector("[data-testid='conversation-panel-body']"),
       document.querySelector("[data-testid='conversation-panel-messages']"),
-      document.querySelector("[aria-label*='Message list' i]")
+      document.querySelector("[data-testid*='conversation-panel']"),
+      document.querySelector("[data-testid*='conversation']"),
+      document.querySelector("[aria-label*='Message list' i]"),
+      document.body
     ].filter(Boolean);
+
+    const unique = new Map();
+    candidates.forEach((node) => {
+      const key = node === document.body
+        ? "body"
+        : node.id || node.getAttribute?.("data-testid") || node.tagName;
+      if (!unique.has(key)) unique.set(key, node);
+    });
+
+    return [...unique.values()];
+  }
+
+  function isInSidebar(node) {
+    if (!node || !node.closest) return false;
+    const sidebar = getSidebarRoot();
+    return !!(sidebar && sidebar.contains(node));
   }
 
   function isInConversationPanel(node) {
     if (!node || !node.closest) return false;
-    return !!node.closest("#main");
+    if (isInSidebar(node)) return false;
+
+    if (node.closest("#main")) return true;
+    if (node.closest("main")) return true;
+    if (node.closest("[data-testid='conversation-panel-body']")) return true;
+    if (node.closest("[data-testid='conversation-panel-messages']")) return true;
+    if (node.closest("[data-testid*='conversation-panel']")) return true;
+    if (node.closest("[data-testid*='conversation']")) return true;
+    if (node.closest("[aria-label*='Message list' i]")) return true;
+
+    if (node.matches?.("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg']")) {
+      return !node.closest("#pane-side, #side, [data-testid='chat-list'], [role='listitem'], [role='row']");
+    }
+
+    return false;
   }
 
   function getSidebarRoot() {
@@ -634,7 +668,7 @@
   }
 
   function scan(root) {
-    if (!isInConversationPanel(root) && root !== document.body) return;
+    if (root !== document.body && !isInConversationPanel(root)) return;
     const nodes = [];
     if (root?.matches?.("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg']")) nodes.push(root);
     if (root?.querySelectorAll) {
