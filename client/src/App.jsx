@@ -314,6 +314,9 @@ export default function App() {
               <div style={styles.messageBody}>{message.message_text || "(ללא טקסט)"}</div>
               <div style={styles.metaChips}>
                 <span style={styles.chip}>סוג: {message.event_type || "-"}</span>
+                {message.raw_json?.message_subtype && message.raw_json.message_subtype !== "plain" ? (
+                  <span style={styles.chip}>עדכון: {formatMessageSubtype(message.raw_json.message_subtype)}</span>
+                ) : null}
                 <span style={styles.chip}>UID: {message.message_uid}</span>
                 {message.raw_json?.ack?.label ? <span style={styles.chip}>סטטוס: {message.raw_json.ack.label}</span> : null}
                 {message.media_json?.length ? <span style={styles.chip}>מדיה: {message.media_json.length}</span> : null}
@@ -427,6 +430,14 @@ function formatSender(message) {
   const resolved = String(message.raw_json?.sender_resolved_name || "").trim();
   if (resolved) return resolved;
   return message.sender || "לא ידוע";
+}
+
+function formatMessageSubtype(value) {
+  const subtype = String(value || "").trim().toLowerCase();
+  if (subtype === "reaction") return "תגובה באימוג'י";
+  if (subtype === "reply") return "תגובה להודעה";
+  if (subtype === "reply+reaction") return "תגובה להודעה + אימוג'י";
+  return subtype || "-";
 }
 
 function isTechnicalEvent(message) {

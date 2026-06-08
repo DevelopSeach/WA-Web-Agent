@@ -2,7 +2,7 @@
   if (window.__waAgentContentInstalled) return;
   window.__waAgentContentInstalled = true;
 
-  const seen = new Set();
+  const seen = new Map();
   const resolvingIdentity = new Set();
   let periodicScanHandle = null;
 
@@ -34,6 +34,61 @@
       .replace(/[\u200f\u202a-\u202e\u2066-\u2069]/g, "")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function stableJson(value) {
+    try {
+      return JSON.stringify(value || null);
+    } catch {
+      return "";
+    }
+  }
+
+  function buildMessageSubtype(record) {
+    const hasReply = !!cleanText(record?.reply_to?.text || record?.reply_to?.snippet || "");
+    const hasReactions = Array.isArray(record?.reactions) && record.reactions.length > 0;
+    if (hasReply && hasReactions) return "reply+reaction";
+    if (hasReactions) return "reaction";
+    if (hasReply) return "reply";
+    return "plain";
+  }
+
+  function buildRecordSignature(record) {
+    return stableJson({
+      event_type: record?.event_type || "",
+      message_subtype: record?.message_subtype || "",
+      source: record?.source || "",
+      chat_title: record?.chat_title || "",
+      target_name: record?.target_name || "",
+      target_phone: record?.target_phone || "",
+      target_key: record?.target_key || "",
+      target_type: record?.target_type || "",
+      sender: record?.sender || "",
+      sender_phone: record?.sender_phone || "",
+      sender_key: record?.sender_key || "",
+      sender_resolved_name: record?.sender_resolved_name || "",
+      target_resolved_name: record?.target_resolved_name || "",
+      sent_at_text: record?.sent_at_text || "",
+      direction: record?.direction || "",
+      text: record?.text || "",
+      ack: record?.ack || null,
+      reply_to: record?.reply_to || null,
+      reactions: record?.reactions || [],
+      media: Array.isArray(record?.media) ? record.media.map((item) => ({
+        kind: item?.kind || "",
+        src: item?.src || item?.href || "",
+        text: item?.text || ""
+      })) : []
+    });
+  }
+
+  function shouldEmitRecord(record) {
+    const uid = cleanText(record?.uid);
+    if (!uid) return false;
+    const signature = buildRecordSignature(record);
+    if (seen.get(uid) === signature) return false;
+    seen.set(uid, signature);
+    return true;
   }
 
   function getCurrentChatTitle() {
@@ -526,7 +581,7 @@
       ? ((parsed.sender || inferredMeta.sender) ? "incoming" : "unknown")
       : direction;
     const uid = messageEl.getAttribute("data-id") || buildSyntheticUid(messageEl, prePlainText, rawText, inferredDirection);
-    if (!uid || seen.has(uid)) return null;
+    if (!uid) return null;
     if (!rawText && !prePlainText && !messageEl.querySelector("img, video, audio, a[href], [data-icon]")) return null;
     if (isNoisySystemText(rawText)) return null;
 
@@ -568,9 +623,12 @@
       reply_to: extractReplyContext(messageEl),
       media: extractMedia(messageEl),
       reactions: extractReactions(messageEl),
+      message_subtype: "",
       page_url: location.href,
       captured_at: new Date().toISOString()
     };
+
+    record.message_subtype = buildMessageSubtype(record);
 
     return record;
   }
@@ -584,7 +642,7 @@
     }
     nodes.forEach((node) => {
       const msg = extractMessage(node);
-      if (msg) sendToBackground(msg);
+      if (msg && shouldEmitRecord(msg)) sendToBackground(msg);
     });
   }
 
@@ -760,7 +818,7 @@
     }
 
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
-    if (!uid || seen.has(uid)) return null;
+    if (!uid) return null;
 
     const resolvedPhone = rowPhone || null;
     const record = {
@@ -786,6 +844,7 @@
       reply_to: null,
       media: [],
       reactions: [],
+      message_subtype: "plain",
       page_url: location.href,
       captured_at: new Date().toISOString()
     };
@@ -831,8 +890,7 @@
     });
 
     grouped.forEach((msg) => {
-      if (!seen.has(msg.uid)) {
-        seen.add(msg.uid);
+      if (shouldEmitRecord(msg)) {
         sendToBackground(msg);
         const shouldResolveIdentity = msg.target_type === "direct"
           && (
@@ -1243,7 +1301,7 @@
         const message = extractMessage(node);
         if (!message) continue;
         if (!expectedText || cleanText(message.text).includes(expectedText)) {
-          sendToBackground(message);
+          if (shouldEmitRecord(message)) sendToBackground(message);
           return { ok: true, uid: message.uid };
         }
       }
