@@ -794,7 +794,12 @@
       const msg = extractSidebarRowMessage(row);
       if (!msg) return;
 
-      const groupKey = buildStringHash("sidebar-group", [msg.chat_title, msg.sent_at_text]);
+      const groupKey = buildStringHash("sidebar-group", [
+        msg.chat_title,
+        msg.sent_at_text,
+        msg.sender || "",
+        msg.text || ""
+      ]);
       const current = grouped.get(groupKey);
       if (!current) {
         grouped.set(groupKey, msg);
