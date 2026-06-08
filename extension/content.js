@@ -724,10 +724,19 @@
     if (!isSavedContactName(title) && !normalizePhoneCandidate(title) && body.startsWith("\"")) return null;
     if (cleanText(title) === cleanText(body)) return null;
 
+    const isGroup = /,/.test(title) || /group|קבוצה/i.test(allText);
+    const senderCandidate = singleLineMeta?.sender || meta.sender || null;
+    if (isGroup) {
+      const lowerBody = cleanText(body).toLowerCase();
+      if (!senderCandidate && /:\s*$/.test(body)) return null;
+      if (!senderCandidate && /\bis\s…?$/.test(lowerBody)) return null;
+      if (senderCandidate && cleanText(body) === `${cleanText(senderCandidate)} :`) return null;
+      if (senderCandidate && cleanText(body) === `${cleanText(senderCandidate)} is …`) return null;
+    }
+
     const uid = buildStringHash("sidebar", [title, body, timeCandidate, unreadText]);
     if (!uid || seen.has(uid)) return null;
 
-    const isGroup = /,/.test(title) || /group|קבוצה/i.test(allText);
     const resolvedPhone = rowPhone || null;
     const record = {
       event_type: "message",
@@ -740,10 +749,10 @@
         ? buildParticipantKey("target", [title, "group"])
         : (resolvedPhone || buildParticipantKey("target", [title, "direct"])),
       target_type: isGroup ? "group" : "direct",
-      sender: isGroup ? (singleLineMeta?.sender || meta.sender || null) : title,
+      sender: isGroup ? senderCandidate : title,
       sender_phone: resolvedPhone,
       sender_key: isGroup
-        ? buildParticipantKey("sender", [singleLineMeta?.sender || meta.sender || title, title, "group"])
+        ? buildParticipantKey("sender", [senderCandidate || title, title, "group"])
         : (resolvedPhone || buildParticipantKey("sender", [title, "direct"])),
       sent_at_text: timeCandidate,
       direction: "incoming",
@@ -778,6 +787,10 @@
         if (hasLetters(candidate.chat_title)) score += 2;
         if (!isMostlyNumeric(candidate.chat_title)) score += 1;
         if (candidate.target_phone || candidate.sender_phone) score += 1;
+        if (candidate.target_type === "group" && candidate.sender) score += 4;
+        if (candidate.target_type === "group" && candidate.text && !candidate.text.endsWith(":")) score += 2;
+        if (candidate.text && /\bis\s…?$/.test(candidate.text.toLowerCase())) score -= 5;
+        if (candidate.text && /:\s*$/.test(candidate.text)) score -= 5;
         return score;
       };
       const currentScore = bodyScore(current);
