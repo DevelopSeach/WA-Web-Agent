@@ -80,10 +80,6 @@ function cleanText(value) {
     .trim();
 }
 
-function buildHash(value) {
-  return crypto.createHash("sha1").update(String(value || "")).digest("hex");
-}
-
 function extensionFromMimeType(mimeType) {
   const mime = String(mimeType || "").trim().toLowerCase();
   if (mime === "image/jpeg") return "jpg";
