@@ -204,7 +204,7 @@ function normalizeIncomingMessage(message) {
   return normalized;
 }
 
-function extractReplyLookupCandidates(replyTo) {
+function extractReplyLookupCandidates(replyTo, message = {}) {
   const normalized = normalizeReplyReference(replyTo);
   if (!normalized) return [];
 
@@ -213,7 +213,23 @@ function extractReplyLookupCandidates(replyTo) {
     normalized.snippet
   ].filter(Boolean);
 
-  return [...new Set(values.map((value) => cleanText(value)).filter(Boolean))];
+  const prefixes = [
+    cleanText(normalized.sender),
+    cleanText(message.chat_title),
+    cleanText(message.sender)
+  ].filter(Boolean);
+
+  const candidates = new Set();
+  values.map((value) => cleanText(value)).filter(Boolean).forEach((value) => {
+    candidates.add(value);
+    prefixes.forEach((prefix) => {
+      if (prefix && value.startsWith(`${prefix} `)) {
+        candidates.add(cleanText(value.slice(prefix.length)));
+      }
+    });
+  });
+
+  return [...candidates];
 }
 
 async function resolveReplyReference(message, { beforeId = null } = {}) {
@@ -221,7 +237,7 @@ async function resolveReplyReference(message, { beforeId = null } = {}) {
   if (!replyTo) return message;
   if (replyTo.original_msg_id && replyTo.original_msg_sender) return message;
 
-  const lookupCandidates = extractReplyLookupCandidates(replyTo);
+  const lookupCandidates = extractReplyLookupCandidates(replyTo, message);
   if (!lookupCandidates.length) return { ...message, reply_to: replyTo };
 
   const conditions = [
