@@ -328,6 +328,13 @@ export default function App() {
                     {message.raw_json.reply_to.sender ? `${message.raw_json.reply_to.sender}: ` : ""}
                     {message.raw_json.reply_to.snippet || message.raw_json.reply_to.text}
                   </div>
+                  {message.raw_json.reply_to.original_msg_id || message.raw_json.reply_to.original_msg_sender ? (
+                    <div style={styles.replyMeta}>
+                      {message.raw_json.reply_to.original_msg_sender ? `שולח מקורי: ${message.raw_json.reply_to.original_msg_sender}` : ""}
+                      {message.raw_json.reply_to.original_msg_sender && message.raw_json.reply_to.original_msg_id ? " | " : ""}
+                      {message.raw_json.reply_to.original_msg_id ? `מזהה הודעה מקורית: ${message.raw_json.reply_to.original_msg_id}` : ""}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {Array.isArray(message.reactions_json) && message.reactions_json.length > 0 ? (
@@ -338,6 +345,13 @@ export default function App() {
                       <span style={styles.reactionText}>
                         {Array.isArray(reaction.actors) && reaction.actors.length ? reaction.actors.join(", ") : reaction.text}
                       </span>
+                      {(reaction.sender_id || reaction.response_time) ? (
+                        <span style={styles.reactionMeta}>
+                          {reaction.sender_id ? `ID: ${reaction.sender_id}` : ""}
+                          {reaction.sender_id && reaction.response_time ? " | " : ""}
+                          {reaction.response_time ? `זמן: ${reaction.response_time}` : ""}
+                        </span>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -551,10 +565,12 @@ const styles = {
   replyCard: { background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: 10, marginBottom: 10 },
   replyLabel: { color: "#9a3412", fontSize: 12, fontWeight: 800, marginBottom: 4 },
   replyText: { color: "#7c2d12", lineHeight: 1.5 },
+  replyMeta: { color: "#7c2d12", lineHeight: 1.4, fontSize: 12, marginTop: 6, opacity: 0.85 },
   reactionList: { display: "grid", gap: 8, marginBottom: 10 },
-  reactionItem: { display: "flex", gap: 10, alignItems: "center", background: "#f3f4f6", borderRadius: 999, padding: "8px 12px", width: "fit-content", maxWidth: "100%" },
+  reactionItem: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", background: "#f3f4f6", borderRadius: 999, padding: "8px 12px", width: "fit-content", maxWidth: "100%" },
   reactionEmoji: { fontSize: 18 },
   reactionText: { color: "#374151", fontSize: 14 },
+  reactionMeta: { color: "#6b7280", fontSize: 12 },
   rawSummary: { cursor: "pointer", color: "#9a3412", fontWeight: 700, marginBottom: 8 },
   pre: { direction: "ltr", textAlign: "left", background: "#111827", color: "#d1fae5", padding: 12, overflow: "auto", borderRadius: 12, fontSize: 12 }
 };

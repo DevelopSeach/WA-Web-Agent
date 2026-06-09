@@ -112,7 +112,9 @@ function normalizeReplyReference(reply) {
     ...reply,
     sender: sender || null,
     text: text || null,
-    snippet: snippet || text || null
+    snippet: snippet || text || null,
+    original_msg_id: cleanText(reply.original_msg_id) || null,
+    original_msg_sender: cleanText(reply.original_msg_sender || sender) || null
   };
 }
 

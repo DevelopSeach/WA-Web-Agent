@@ -773,10 +773,16 @@
     if (!text) return null;
 
     const lines = text.split("\n").map((value) => cleanText(value)).filter(Boolean);
+    const sender = lines.length > 1 ? lines[0] : null;
+    const snippet = lines.length > 1 ? lines.slice(1).join(" ") : text;
     return {
       text,
-      sender: lines.length > 1 ? lines[0] : null,
-      snippet: lines.length > 1 ? lines.slice(1).join(" ") : text
+      sender,
+      snippet,
+      original_msg_id: quotedNode.getAttribute("data-id")
+        || quotedNode.closest("[data-id]")?.getAttribute("data-id")
+        || buildStringHash("quoted", [getCurrentChatTitle(), sender || "", snippet || text]),
+      original_msg_sender: sender
     };
   }
 
@@ -1060,6 +1066,7 @@
     );
     const body = stripUnreadNoise(meta.body || snippetCandidate || fallbackBody || "");
     if (isWeakSidebarBody(body, title, timeCandidate)) return null;
+    if (body.startsWith("\"")) return null;
     if (isMostlyNumeric(title) && !timeCandidate && isMostlyNumeric(body) && body.length <= 2) return null;
     if (!timeCandidate && body.length <= 2 && isMostlyNumeric(body) && !isMostlyNumeric(title) && hasLetters(title)) return null;
     if (isNoisySystemText(body)) return null;
