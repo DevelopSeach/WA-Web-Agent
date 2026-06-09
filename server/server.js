@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { pool } from "./db.js";
 
@@ -15,6 +16,13 @@ app.use(express.json({ limit: "50mb" }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const clientDistDir = path.resolve(__dirname, "..", process.env.CLIENT_DIST_DIR || "client/dist");
+const MEDIA_SERVICE_BASE_URL = String(process.env.MEDIA_SERVICE_BASE_URL || "https://cherrywrapper.hinbit.com").replace(/\/$/, "");
+const MEDIA_SERVICE_API_KEY = String(
+  process.env.MEDIA_SERVICE_API_KEY
+  || process.env.MEDIA_SERVICE_TOKEN
+  || process.env.CHERRYWRAPPER_API_KEY
+  || ""
+).trim();
 
 function requireToken(req, res, next) {
   const expected = process.env.WEBHOOK_TOKEN;
@@ -70,6 +78,168 @@ function cleanText(value) {
     .replace(/[\u200f\u202a-\u202e\u2066-\u2069]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function buildHash(value) {
+  return crypto.createHash("sha1").update(String(value || "")).digest("hex");
+}
+
+function extensionFromMimeType(mimeType) {
+  const mime = String(mimeType || "").trim().toLowerCase();
+  if (mime === "image/jpeg") return "jpg";
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  if (mime === "image/gif") return "gif";
+  if (mime === "video/mp4") return "mp4";
+  if (mime === "video/webm") return "webm";
+  if (mime === "audio/ogg") return "ogg";
+  if (mime === "audio/mpeg") return "mp3";
+  if (mime === "audio/mp4") return "m4a";
+  if (mime === "application/pdf") return "pdf";
+  if (mime.startsWith("text/")) return "txt";
+  return "bin";
+}
+
+function inferMimeTypeFromMedia(item) {
+  const explicit = cleanText(item?.mime_type);
+  if (explicit) return explicit;
+  const source = String(item?.src || item?.href || item?.original_src || "").trim();
+  const dataMatch = source.match(/^data:([^;,]+)[;,]/i);
+  if (dataMatch?.[1]) return dataMatch[1].toLowerCase();
+  const kind = String(item?.kind || "").trim().toLowerCase();
+  if (kind === "image") return "image/jpeg";
+  if (kind === "video") return "video/mp4";
+  if (kind === "audio") return "audio/mpeg";
+  if (kind === "link") return "application/octet-stream";
+  return "application/octet-stream";
+}
+
+function buildMediaFilename(item, context = {}) {
+  const mimeType = inferMimeTypeFromMedia(item);
+  const ext = extensionFromMimeType(mimeType);
+  const kind = cleanText(item?.kind || "media").toLowerCase() || "media";
+  const base = cleanText(item?.filename || "") || `${context.uid || "message"}-${kind}-${context.index ?? 0}`;
+  const sanitized = base.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || `${kind}-${context.index ?? 0}`;
+  return sanitized.includes(".") ? sanitized : `${sanitized}.${ext}`;
+}
+
+function mediaFolderForItem(item) {
+  const kind = cleanText(item?.kind).toLowerCase();
+  if (kind === "image") return "images";
+  if (kind === "video") return "videos";
+  if (kind === "audio") return "audio";
+  return "documents";
+}
+
+function parseDataUrl(value) {
+  const match = String(value || "").match(/^data:([^;,]+)(;base64)?,(.*)$/s);
+  if (!match) return null;
+  return {
+    mimeType: match[1] || "application/octet-stream",
+    base64: match[2] ? match[3] : Buffer.from(decodeURIComponent(match[3] || ""), "utf8").toString("base64")
+  };
+}
+
+function normalizeUploadedMediaResponse(payload) {
+  const response = payload && typeof payload === "object" ? payload : {};
+  return {
+    storage_type: response.storage_type || null,
+    stored_path: response.stored_path || null,
+    public_url: response.public_url || null,
+    location: response.location || null,
+    media_url: response.public_url || response.location || response.stored_path || null
+  };
+}
+
+async function uploadMediaItem(item, context = {}) {
+  if (!MEDIA_SERVICE_API_KEY) {
+    return {
+      ...item,
+      upload_error: "MEDIA_SERVICE_API_KEY is not configured"
+    };
+  }
+
+  const source = String(item?.src || item?.href || item?.original_src || "").trim();
+  if (!source) return item;
+
+  const existingUrl = cleanText(item?.uploaded_url || item?.upload?.media_url || item?.upload?.public_url || item?.upload?.location);
+  if (existingUrl) return item;
+
+  if (source.startsWith("blob:")) {
+    return {
+      ...item,
+      upload_error: "blob URLs cannot be uploaded from the server without a transferable payload"
+    };
+  }
+
+  const filename = buildMediaFilename(item, context);
+  const mimeType = inferMimeTypeFromMedia(item);
+  const folder = mediaFolderForItem(item);
+  const body = {
+    filename,
+    folder,
+    mime_type: mimeType
+  };
+
+  const dataUrl = parseDataUrl(source);
+  if (dataUrl?.base64) {
+    body.base64 = dataUrl.base64;
+    body.mime_type = dataUrl.mimeType || mimeType;
+  } else if (/^https?:\/\//i.test(source)) {
+    body.url = source;
+  } else {
+    return {
+      ...item,
+      upload_error: "unsupported media source for upload"
+    };
+  }
+
+  const response = await fetch(`${MEDIA_SERVICE_BASE_URL}/upload_media`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": MEDIA_SERVICE_API_KEY
+    },
+    body: JSON.stringify(body)
+  });
+
+  const payloadText = await response.text();
+  let payload;
+  try {
+    payload = JSON.parse(payloadText);
+  } catch {
+    payload = { raw_response: payloadText };
+  }
+
+  if (!response.ok) {
+    return {
+      ...item,
+      upload_error: payload?.error || `upload failed with HTTP ${response.status}`,
+      upload_response: payload
+    };
+  }
+
+  const normalized = normalizeUploadedMediaResponse(payload);
+  return {
+    ...item,
+    upload: normalized,
+    uploaded_url: normalized.media_url
+  };
+}
+
+async function enrichMessageMediaForStorage(message) {
+  const media = Array.isArray(message?.media) ? message.media : [];
+  if (!media.length) return message;
+
+  const uploadedMedia = await Promise.all(media.map((item, index) => uploadMediaItem(item, {
+    uid: message.uid,
+    index
+  })));
+
+  return {
+    ...message,
+    media: uploadedMedia
+  };
 }
 
 function normalizeSentAtText(value) {
@@ -694,6 +864,7 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
   let msg = normalizeIncomingMessage(req.body || {});
   msg.uid = normalizeUid(msg);
   msg = await resolveReplyReference(msg);
+  msg = await enrichMessageMediaForStorage(msg);
 
   const capturedAt = msg.captured_at ? new Date(msg.captured_at) : new Date();
 

@@ -348,6 +348,21 @@ export default function App() {
                 {message.raw_json?.ack?.label ? <span style={styles.chip}>סטטוס: {message.raw_json.ack.label}</span> : null}
                 {message.media_json?.length ? <span style={styles.chip}>מדיה: {message.media_json.length}</span> : null}
               </div>
+              {getOpenableMediaTargets(message).length ? (
+                <div style={styles.mediaActions}>
+                  {getOpenableMediaTargets(message).map((target, index) => (
+                    <a
+                      key={`${message.id}-open-media-${index}`}
+                      href={target.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={styles.mediaActionButton}
+                    >
+                      {target.label}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
               {message.raw_json?.reply_to ? (
                 <div style={styles.replyCard}>
                   <div style={styles.replyLabel}>תגובה להודעה</div>
@@ -586,6 +601,42 @@ function getMediaPriority(media) {
   return sourceBonus + area;
 }
 
+function getOpenableMediaTargets(message) {
+  const media = Array.isArray(message?.raw_json?.media)
+    ? message.raw_json.media
+    : Array.isArray(message?.media_json)
+      ? message.media_json
+      : [];
+
+  const seen = new Set();
+  return media.flatMap((item, index) => {
+    const uploadedUrl = cleanMediaUrl(
+      item?.uploaded_url
+      || item?.upload?.media_url
+      || item?.upload?.public_url
+      || item?.upload?.location
+    );
+    const fallbackUrl = cleanMediaUrl(item?.src || item?.href || item?.original_src);
+    const targetUrl = uploadedUrl || fallbackUrl;
+    if (!targetUrl) return [];
+    if (seen.has(targetUrl)) return [];
+    seen.add(targetUrl);
+    return [{
+      url: targetUrl,
+      label: uploadedUrl ? `פתח מדיה ${index + 1}` : `פתח מקור מדיה ${index + 1}`
+    }];
+  });
+}
+
+function cleanMediaUrl(value) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("data:")) return url;
+  if (url.startsWith("blob:")) return url;
+  return "";
+}
+
 const styles = {
   page: {
     fontFamily: "'Segoe UI', sans-serif",
@@ -655,6 +706,19 @@ const styles = {
     color: "#1d4ed8",
     textDecoration: "none",
     fontSize: 13
+  },
+  mediaActions: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 },
+  mediaActionButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: "1px solid #bfdbfe",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    textDecoration: "none",
+    fontSize: 13,
+    fontWeight: 700
   },
   metaChips: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 },
   chip: { background: "#f3f4f6", borderRadius: 999, padding: "6px 10px", fontSize: 13, color: "#374151" },
