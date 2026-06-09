@@ -204,6 +204,66 @@ function normalizeIncomingMessage(message) {
   return normalized;
 }
 
+function extractReplyLookupCandidates(replyTo) {
+  const normalized = normalizeReplyReference(replyTo);
+  if (!normalized) return [];
+
+  const values = [
+    normalized.text,
+    normalized.snippet
+  ].filter(Boolean);
+
+  return [...new Set(values.map((value) => cleanText(value)).filter(Boolean))];
+}
+
+async function resolveReplyReference(message, { beforeId = null } = {}) {
+  const replyTo = normalizeReplyReference(message?.reply_to);
+  if (!replyTo) return message;
+  if (replyTo.original_msg_id && replyTo.original_msg_sender) return message;
+
+  const lookupCandidates = extractReplyLookupCandidates(replyTo);
+  if (!lookupCandidates.length) return { ...message, reply_to: replyTo };
+
+  const conditions = [
+    `event_type = 'message'`,
+    `COALESCE(chat_title, '') = COALESCE(?, '')`
+  ];
+  const params = [message.chat_title || message.payload?.title || null];
+
+  if (beforeId) {
+    conditions.push(`id < ?`);
+    params.push(beforeId);
+  } else if (message.uid) {
+    conditions.push(`message_uid <> ?`);
+    params.push(message.uid);
+  }
+
+  const [rows] = await pool.execute(
+    `SELECT id, message_uid, chat_title, sender, message_text, raw_json
+     FROM wa_messages
+     WHERE ${conditions.join(" AND ")}
+     ORDER BY id DESC
+     LIMIT 200`,
+    params
+  );
+
+  const match = rows.find((row) => {
+    const normalizedText = getNormalizedMessageText(row);
+    return lookupCandidates.includes(normalizedText);
+  });
+
+  if (!match) return { ...message, reply_to: replyTo };
+
+  return {
+    ...message,
+    reply_to: {
+      ...replyTo,
+      original_msg_id: replyTo.original_msg_id || match.message_uid || null,
+      original_msg_sender: replyTo.original_msg_sender || cleanText(match.sender) || null
+    }
+  };
+}
+
 function rowToIncomingMessage(row) {
   const raw = parseJsonMaybe(row.raw_json);
   return normalizeIncomingMessage({
@@ -323,6 +383,45 @@ async function consolidateStoredDuplicates(rows) {
     await pool.execute(
       `DELETE FROM wa_messages WHERE id IN (${duplicates.map(() => "?").join(",")})`,
       duplicates.map((row) => row.id)
+    );
+  }
+}
+
+async function backfillReplyReferences(rows) {
+  for (const row of rows) {
+    const raw = parseJsonMaybe(row.raw_json);
+    if (!hasReplyMetadata(raw)) continue;
+
+    const normalized = await resolveReplyReference({
+      ...raw,
+      uid: row.message_uid,
+      event_type: row.event_type,
+      source: row.source,
+      chat_title: row.chat_title,
+      sender: row.sender,
+      direction: row.direction,
+      sent_at_text: row.sent_at_text,
+      captured_at: row.captured_at,
+      text: row.message_text
+    }, { beforeId: row.id });
+
+    const replyTo = normalizeReplyReference(normalized.reply_to);
+    if (!replyTo) continue;
+    if (stableJson(replyTo) === stableJson(normalizeReplyReference(raw.reply_to))) continue;
+
+    const nextRaw = {
+      ...raw,
+      reply_to: replyTo
+    };
+
+    await pool.execute(
+      `UPDATE wa_messages
+       SET raw_json = CAST(? AS JSON)
+       WHERE id = ?`,
+      [
+        JSON.stringify(nextRaw),
+        row.id
+      ]
     );
   }
 }
@@ -576,8 +675,9 @@ app.get("/api/health", (req, res) => {
 });
 
 app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
-  const msg = normalizeIncomingMessage(req.body || {});
+  let msg = normalizeIncomingMessage(req.body || {});
   msg.uid = normalizeUid(msg);
+  msg = await resolveReplyReference(msg);
 
   const capturedAt = msg.captured_at ? new Date(msg.captured_at) : new Date();
 
@@ -691,6 +791,7 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
       ]
     );
     await consolidateStoredDuplicates(recentRows);
+    await backfillReplyReferences(recentRows);
   }
 
   res.json({ ok: true, saved: true, uid: msg.uid });
