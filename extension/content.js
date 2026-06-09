@@ -630,37 +630,54 @@
 
   function extractMedia(el) {
     const media = [];
+    const seen = new Set();
+    const pushMedia = (item) => {
+      const key = stableJson({
+        kind: item?.kind || "",
+        src: item?.src || item?.href || "",
+        alt: item?.alt || "",
+        text: item?.text || ""
+      });
+      if (seen.has(key)) return;
+      seen.add(key);
+      media.push(item);
+    };
+
     el.querySelectorAll("img").forEach((img) => {
-      media.push({
+      const item = {
         kind: "image",
         src: img.currentSrc || img.src || "",
         alt: img.alt || "",
+        sender_id: null,
+        response_time: null,
         width: img.naturalWidth || img.width || null,
         height: img.naturalHeight || img.height || null
-      });
+      };
+      pushMedia(item);
     });
     el.querySelectorAll("video").forEach((video) => {
-      media.push({
+      pushMedia({
         kind: "video",
         src: video.currentSrc || video.src || "",
         duration: Number.isFinite(video.duration) ? video.duration : null
       });
     });
     el.querySelectorAll("audio").forEach((audio) => {
-      media.push({
+      pushMedia({
         kind: "audio",
         src: audio.currentSrc || audio.src || "",
         duration: Number.isFinite(audio.duration) ? audio.duration : null
       });
     });
     el.querySelectorAll("a[href]").forEach((a) => {
-      media.push({ kind: "link", href: a.href, text: cleanText(a.innerText) });
+      pushMedia({ kind: "link", href: a.href, text: cleanText(a.innerText) });
     });
     return media;
   }
 
   function extractReactions(el) {
     const reactions = [];
+    const seen = new Set();
     const nodes = [
       ...el.querySelectorAll("[aria-label*='reaction' i]"),
       ...el.querySelectorAll("[aria-label*='תגובה' i]"),
@@ -679,11 +696,33 @@
       const hebrewMatch = text.match(/(?:מאת|על ידי)\s+(.+)$/i);
       if (hebrewMatch?.[1]) actors.push(...hebrewMatch[1].split(/,|&|ו/).map((value) => cleanText(value)).filter(Boolean));
 
-      reactions.push({
+      const normalizedActors = [...new Set(actors)];
+      const senderId = normalizedActors.length === 1
+        ? buildParticipantKey("sender", [normalizedActors[0], getCurrentChatTitle(), "reaction"])
+        : null;
+      const responseTime = cleanText(node.getAttribute("data-testid") || "")
+        .match(/\b\d{1,2}:\d{2}\b/)?.[0]
+        || cleanText(node.getAttribute("aria-label") || "").match(/\b\d{1,2}:\d{2}\b/)?.[0]
+        || null;
+
+      const reaction = {
         text,
         emojis,
-        actors: [...new Set(actors)]
+        actors: normalizedActors,
+        sender_id: senderId,
+        response_time: responseTime
+      };
+
+      const key = stableJson({
+        text: reaction.text,
+        emojis: reaction.emojis,
+        actors: reaction.actors,
+        sender_id: reaction.sender_id,
+        response_time: reaction.response_time
       });
+      if (seen.has(key)) return;
+      seen.add(key);
+      reactions.push(reaction);
     });
     return reactions;
   }
