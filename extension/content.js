@@ -5,6 +5,7 @@
   const seen = new Map();
   const resolvingIdentity = new Set();
   let periodicScanHandle = null;
+  let periodicDomDebugHandle = null;
 
   injectPageHook();
 
@@ -150,9 +151,13 @@
   function getCurrentChatTitle() {
     const header = deepQueryAll("header")[0];
     if (!header) return "";
-    const titleNode = header.querySelector("span[title]");
-    if (titleNode) return titleNode.getAttribute("title") || "";
-    return cleanText(header.innerText);
+    const titledNodes = [...header.querySelectorAll("span[title], [title], [aria-label]")];
+    const preferred = titledNodes
+      .map((node) => cleanText(node.getAttribute("title") || node.getAttribute("aria-label") || node.textContent || ""))
+      .find((value) => value && !isGenericTargetName(value));
+    if (preferred) return preferred;
+    const fallback = cleanText(header.innerText);
+    return isGenericTargetName(fallback) ? "" : fallback;
   }
 
   function getHeaderText() {
@@ -321,7 +326,7 @@
   function isGenericTargetName(value) {
     const text = cleanText(value).toLowerCase();
     if (!text) return true;
-    return [
+    const exact = [
       "chats",
       "channels",
       "channel",
@@ -331,7 +336,35 @@
       "חיפוש",
       "עדכונים",
       "סטטוס"
-    ].includes(text);
+    ];
+    if (exact.includes(text)) return true;
+    return (
+      text.includes("updates in status") ||
+      text.includes("whatsapp business") ||
+      text.includes("communities") ||
+      text.includes("archived") ||
+      text.includes("favorites") ||
+      text.includes("groups") ||
+      text.includes("all unread")
+    );
+  }
+
+  function hasConversationLikeMessages(root) {
+    if (!root) return false;
+    return deepQueryAll("[data-pre-plain-text], .message-in, .message-out, [data-testid*='msg-container']", root).length > 0;
+  }
+
+  function isOpenConversationContext() {
+    const currentChatTitle = getCurrentChatTitle();
+    const headerText = getHeaderText();
+    const messageBox = findMessageBox();
+    const roots = getChatRoots();
+    const hasConversationMessages = roots.some((root) => hasConversationLikeMessages(root));
+
+    if (!messageBox) return false;
+    if (!currentChatTitle && isGenericTargetName(headerText)) return false;
+    if (isGenericTargetName(currentChatTitle || headerText)) return false;
+    return hasConversationMessages;
   }
 
   function extractTargetName() {
@@ -1026,12 +1059,15 @@
   function emitDomDebugSnapshot(reason = "manual") {
     try {
       const chatRoots = getChatRoots();
-      const mainTextSample = chatRoots
+      const openConversation = isOpenConversationContext();
+      const mainTextSample = (openConversation ? chatRoots : [])
         .map((root) => cleanText(root.innerText || root.textContent || ""))
         .filter(Boolean)
         .join("\n---\n")
         .slice(0, 8000);
-      const conversationSamples = deepQueryAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [data-testid*='msg-container'], .message-in, .message-out", document.body)
+      const conversationSamples = (openConversation
+        ? chatRoots.flatMap((root) => deepQueryAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [data-testid*='msg-container'], .message-in, .message-out", root))
+        : [])
         .slice(0, 15)
         .map((node) => cleanText(node.innerText || node.textContent || ""))
         .filter(Boolean)
@@ -1052,6 +1088,8 @@
           title: document.title,
           current_chat_title: getCurrentChatTitle(),
           header_text: getHeaderText(),
+          open_chat_detected: openConversation,
+          message_box_found: !!findMessageBox(),
           body_text_sample: cleanText(document.body?.innerText || "").slice(0, 12000),
           main_text_sample: mainTextSample,
           chat_roots_found: chatRoots.length,
@@ -1649,6 +1687,7 @@
     getChatRoots().forEach((root) => scan(root));
     scanSidebar();
     emitCaptureDebug();
+    emitDomDebugSnapshot("startup_0s");
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
@@ -1661,6 +1700,9 @@
       getChatRoots().forEach((root) => scan(root));
       scanSidebar();
     }, 2000);
+    periodicDomDebugHandle = window.setInterval(() => {
+      emitDomDebugSnapshot(isOpenConversationContext() ? "heartbeat_open_chat" : "heartbeat_overview");
+    }, 15000);
     window.setTimeout(emitCaptureDebug, 3000);
     window.setTimeout(emitCaptureDebug, 8000);
     window.setTimeout(() => emitDomDebugSnapshot("startup_3s"), 3000);
