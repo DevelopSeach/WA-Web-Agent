@@ -745,21 +745,42 @@
     const text = cleanText(rawText);
     if (!text || !replyTo) return text;
 
+    const normalizedReplyText = cleanText(replyTo.text);
+    const normalizedReplySnippet = cleanText(replyTo.snippet);
+    const normalizedReplySender = cleanText(replyTo.sender);
+    const stripSender = (value) => {
+      const candidate = cleanText(value);
+      if (!candidate) return "";
+      if (normalizedReplySender && candidate.startsWith(`${normalizedReplySender} `)) {
+        return cleanText(candidate.slice(normalizedReplySender.length));
+      }
+      return candidate;
+    };
+
     const candidates = [
-      cleanText(replyTo.text),
-      cleanText(replyTo.snippet),
-      cleanText([replyTo.sender, replyTo.snippet].filter(Boolean).join(" "))
+      stripSender(normalizedReplyText),
+      stripSender(normalizedReplySnippet),
+      cleanText([normalizedReplySender, stripSender(normalizedReplyText)].filter(Boolean).join(" ")),
+      cleanText([normalizedReplySender, stripSender(normalizedReplySnippet)].filter(Boolean).join(" ")),
+      cleanText([normalizedReplySender, normalizedReplyText].filter(Boolean).join(" ")),
+      cleanText([normalizedReplySender, normalizedReplySnippet].filter(Boolean).join(" "))
     ].filter(Boolean);
 
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      if (text === candidate) return text;
-      if (text.startsWith(`${candidate} `)) {
-        return cleanText(text.slice(candidate.length));
+    let current = text;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        if (current === candidate) return current;
+        if (current.startsWith(`${candidate} `)) {
+          current = cleanText(current.slice(candidate.length));
+          changed = true;
+        }
       }
     }
 
-    return text;
+    return current;
   }
 
   function extractMessage(el) {

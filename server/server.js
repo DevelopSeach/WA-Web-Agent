@@ -64,6 +64,22 @@ function parseJsonMaybe(value) {
   }
 }
 
+function cleanText(value) {
+  return String(value || "")
+    .replace(/\u200e/g, "")
+    .replace(/[\u200f\u202a-\u202e\u2066-\u2069]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeSentAtText(value) {
+  const text = cleanText(value);
+  if (!text) return "";
+  const timeMatch = text.match(/\b(\d{1,2}:\d{2})\b/);
+  if (timeMatch) return timeMatch[1];
+  return text.toLowerCase();
+}
+
 function chooseBestName(candidates) {
   return candidates.find((candidate) => {
     const text = String(candidate || "").trim();
@@ -78,6 +94,102 @@ function hasReplyMetadata(message) {
 
 function hasReactionMetadata(message) {
   return Array.isArray(message?.reactions) && message.reactions.length > 0;
+}
+
+function normalizeReplyReference(reply) {
+  if (!reply) return null;
+  const sender = cleanText(reply.sender);
+  const stripSender = (value) => {
+    const text = cleanText(value);
+    if (!text) return "";
+    if (sender && text.startsWith(`${sender} `)) return cleanText(text.slice(sender.length));
+    return text;
+  };
+
+  const text = stripSender(reply.text);
+  const snippet = stripSender(reply.snippet || reply.text);
+  return {
+    ...reply,
+    sender: sender || null,
+    text: text || null,
+    snippet: snippet || text || null
+  };
+}
+
+function stripReplyPrefix(text, replyTo) {
+  const sourceText = cleanText(text);
+  const normalizedReply = normalizeReplyReference(replyTo);
+  if (!sourceText || !normalizedReply) return sourceText;
+
+  const candidates = [
+    normalizedReply.text,
+    normalizedReply.snippet,
+    cleanText([normalizedReply.sender, normalizedReply.text].filter(Boolean).join(" ")),
+    cleanText([normalizedReply.sender, normalizedReply.snippet].filter(Boolean).join(" "))
+  ].filter(Boolean);
+
+  let current = sourceText;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const candidate of candidates) {
+      if (candidate && current.startsWith(`${candidate} `)) {
+        current = cleanText(current.slice(candidate.length));
+        changed = true;
+      }
+    }
+  }
+
+  return current;
+}
+
+function getNormalizedMessageText(messageLike) {
+  const replyTo = normalizeReplyReference(messageLike?.reply_to);
+  return stripReplyPrefix(
+    messageLike?.text
+      || messageLike?.message_text
+      || messageLike?.payload?.body
+      || "",
+    replyTo
+  );
+}
+
+function getComparableMessageShape(messageLike) {
+  const raw = parseJsonMaybe(messageLike?.raw_json);
+  const merged = { ...raw, ...messageLike };
+  const replyTo = normalizeReplyReference(merged.reply_to);
+  return {
+    chat_title: cleanText(merged.chat_title || merged.payload?.title || ""),
+    sender: cleanText(merged.sender || ""),
+    sent_at_text: normalizeSentAtText(merged.sent_at_text || ""),
+    message_text: getNormalizedMessageText({ ...merged, reply_to: replyTo }),
+    reply_to: replyTo,
+    source: cleanText(merged.source || "")
+  };
+}
+
+function findDuplicateCandidate(rows, message) {
+  const incoming = getComparableMessageShape(message);
+  if (!incoming.chat_title || !incoming.message_text) return null;
+
+  return rows.find((row) => {
+    const existing = getComparableMessageShape(row);
+    if (existing.chat_title !== incoming.chat_title) return false;
+    if (existing.sender !== incoming.sender) return false;
+    if (existing.message_text !== incoming.message_text) return false;
+    if (existing.sent_at_text && incoming.sent_at_text) {
+      return existing.sent_at_text === incoming.sent_at_text;
+    }
+    return cleanText(row.sent_at_text || "") === cleanText(message.sent_at_text || "");
+  }) || null;
+}
+
+function normalizeIncomingMessage(message) {
+  const normalized = { ...message };
+  const replyTo = normalizeReplyReference(normalized.reply_to);
+  if (replyTo) normalized.reply_to = replyTo;
+  normalized.text = getNormalizedMessageText(normalized);
+  return normalized;
 }
 
 function messageSubtypeRank(value) {
@@ -103,7 +215,7 @@ function choosePreferredValue(incomingValue, existingValue, { preferIncoming = f
 
 function buildMergedMessage(existingRow, incomingMessage) {
   const existingRaw = parseJsonMaybe(existingRow.raw_json);
-  const incomingRaw = { ...incomingMessage };
+  const incomingRaw = normalizeIncomingMessage({ ...incomingMessage });
   const incomingSubtype = incomingRaw.message_subtype || "plain";
   const existingSubtype = existingRaw.message_subtype || "plain";
   const preferIncoming = isDomSource(incomingMessage.source) && !isDomSource(existingRow.source);
@@ -115,7 +227,7 @@ function buildMergedMessage(existingRow, incomingMessage) {
     chat_title: choosePreferredValue(incomingMessage.chat_title, existingRow.chat_title || existingRaw.chat_title, { preferIncoming }),
     sender: choosePreferredValue(incomingMessage.sender, existingRow.sender || existingRaw.sender, { preferIncoming }),
     text: choosePreferredValue(incomingMessage.text, existingRow.message_text || existingRaw.text, { preferIncoming }),
-    sent_at_text: choosePreferredValue(incomingMessage.sent_at_text, existingRow.sent_at_text || existingRaw.sent_at_text, { preferIncoming }),
+    sent_at_text: choosePreferredValue(incomingRaw.sent_at_text, existingRow.sent_at_text || existingRaw.sent_at_text, { preferIncoming }),
     target_name: choosePreferredValue(incomingMessage.target_name, existingRaw.target_name, { preferIncoming }),
     target_phone: choosePreferredValue(incomingMessage.target_phone, existingRaw.target_phone, { preferIncoming }),
     sender_phone: choosePreferredValue(incomingMessage.sender_phone, existingRaw.sender_phone, { preferIncoming }),
@@ -127,9 +239,9 @@ function buildMergedMessage(existingRow, incomingMessage) {
     page_url: choosePreferredValue(incomingMessage.page_url, existingRaw.page_url, { preferIncoming }),
     captured_at: choosePreferredValue(incomingMessage.captured_at, existingRaw.captured_at, { preferIncoming }) || new Date().toISOString(),
     ack: incomingMessage.ack || existingRaw.ack || null,
-    reply_to: hasReplyMetadata(incomingMessage) ? incomingMessage.reply_to : (existingRaw.reply_to || null),
-    reactions: hasReactionMetadata(incomingMessage) ? incomingMessage.reactions : (existingRaw.reactions || []),
-    media: Array.isArray(incomingMessage.media) && incomingMessage.media.length ? incomingMessage.media : (existingRaw.media || []),
+    reply_to: hasReplyMetadata(incomingRaw) ? incomingRaw.reply_to : (existingRaw.reply_to || null),
+    reactions: hasReactionMetadata(incomingRaw) ? incomingRaw.reactions : (existingRaw.reactions || []),
+    media: Array.isArray(incomingRaw.media) && incomingRaw.media.length ? incomingRaw.media : (existingRaw.media || []),
     message_subtype: messageSubtypeRank(incomingSubtype) >= messageSubtypeRank(existingSubtype) ? incomingSubtype : existingSubtype,
     source: preferIncoming ? incomingMessage.source : (existingRaw.source || incomingMessage.source || existingRow.source)
   };
@@ -297,41 +409,39 @@ app.get("/api/health", (req, res) => {
 });
 
 app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
-  const msg = req.body || {};
+  const msg = normalizeIncomingMessage(req.body || {});
   msg.uid = normalizeUid(msg);
 
   const capturedAt = msg.captured_at ? new Date(msg.captured_at) : new Date();
 
   if ((msg.event_type || "") === "message") {
-    const [existingRows] = await pool.execute(
+    const [recentRows] = await pool.execute(
       `SELECT id, message_uid, source, chat_title, sender, direction, sent_at_text, message_text, raw_json
        FROM wa_messages
        WHERE event_type = 'message'
          AND message_uid <> ?
          AND COALESCE(chat_title, '') = COALESCE(?, '')
          AND COALESCE(sender, '') = COALESCE(?, '')
-         AND COALESCE(message_text, '') = COALESCE(?, '')
-         AND COALESCE(sent_at_text, '') = COALESCE(?, '')
        ORDER BY id DESC
-       LIMIT 1`,
+       LIMIT 25`,
       [
         msg.uid,
         msg.chat_title || msg.payload?.title || null,
-        msg.sender || null,
-        msg.text || msg.payload?.body || null,
-        msg.sent_at_text || null
+        msg.sender || null
       ]
     );
 
-    if (existingRows.length) {
-      const merged = buildMergedMessage(existingRows[0], msg);
+    const duplicateRow = findDuplicateCandidate(recentRows, msg);
+
+    if (duplicateRow) {
+      const merged = buildMergedMessage(duplicateRow, msg);
       const hasUsefulIncomingUpdate = hasReplyMetadata(msg)
         || hasReactionMetadata(msg)
         || isDomSource(msg.source)
         || String(msg.message_subtype || "").trim().toLowerCase() !== "plain";
 
       if (!hasUsefulIncomingUpdate) {
-        return res.json({ ok: true, saved: false, duplicate: true, uid: existingRows[0].message_uid, duplicate_of: existingRows[0].id });
+        return res.json({ ok: true, saved: false, duplicate: true, uid: duplicateRow.message_uid, duplicate_of: duplicateRow.id });
       }
 
       await pool.execute(
@@ -358,11 +468,11 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
           merged.media_json,
           merged.reactions_json,
           merged.raw_json,
-          existingRows[0].id
+          duplicateRow.id
         ]
       );
 
-      return res.json({ ok: true, saved: true, updated_existing: true, uid: existingRows[0].message_uid, updated_id: existingRows[0].id });
+      return res.json({ ok: true, saved: true, updated_existing: true, uid: duplicateRow.message_uid, updated_id: duplicateRow.id });
     }
   }
 
