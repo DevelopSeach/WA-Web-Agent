@@ -3,6 +3,7 @@
   window.__waAgentContentInstalled = true;
 
   const seen = new Map();
+  const signatureOwners = new Map();
   const resolvingIdentity = new Set();
   let periodicScanHandle = null;
   let periodicDomDebugHandle = null;
@@ -143,8 +144,21 @@
     const uid = cleanText(record?.uid);
     if (!uid) return false;
     const signature = buildRecordSignature(record);
+    const existingOwner = signatureOwners.get(signature);
+    const isSynthetic = uid.startsWith("synthetic-");
+    const ownerIsSynthetic = existingOwner ? existingOwner.startsWith("synthetic-") : false;
+
+    if (existingOwner && existingOwner !== uid) {
+      if (isSynthetic && !ownerIsSynthetic) return false;
+      if (!isSynthetic && ownerIsSynthetic) {
+        seen.delete(existingOwner);
+      } else if (!isSynthetic && !ownerIsSynthetic) {
+        return false;
+      }
+    }
     if (seen.get(uid) === signature) return false;
     seen.set(uid, signature);
+    signatureOwners.set(signature, uid);
     return true;
   }
 
@@ -727,6 +741,27 @@
     };
   }
 
+  function stripReplyPrefix(rawText, replyTo) {
+    const text = cleanText(rawText);
+    if (!text || !replyTo) return text;
+
+    const candidates = [
+      cleanText(replyTo.text),
+      cleanText(replyTo.snippet),
+      cleanText([replyTo.sender, replyTo.snippet].filter(Boolean).join(" "))
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      if (text === candidate) return text;
+      if (text.startsWith(`${candidate} `)) {
+        return cleanText(text.slice(candidate.length));
+      }
+    }
+
+    return text;
+  }
+
   function extractMessage(el) {
     const messageEl = findMessageElement(el);
     if (!messageEl || !messageEl.getAttribute) return null;
@@ -761,6 +796,9 @@
       : (extractedTargetName || effectiveChatTitle || currentChatTitle);
     if (isGenericTargetName(currentChatTitle) && !fallbackName && !extractedTargetName) return null;
 
+    const replyTo = extractReplyContext(messageEl);
+    const bodyText = stripReplyPrefix(inferredMeta.body || rawText, replyTo);
+
     const record = {
       event_type: "message",
       source: "whatsapp_web_extension_dom",
@@ -781,9 +819,9 @@
       sender_key: senderPhone || buildParticipantKey("sender", [fallbackName || effectiveChatTitle || currentChatTitle, targetType]),
       sent_at_text: parsed.sent_at_text || inferredMeta.sent_at_text,
       direction: inferredDirection,
-      text: inferredMeta.body || rawText,
+      text: bodyText,
       ack: extractAck(messageEl),
-      reply_to: extractReplyContext(messageEl),
+      reply_to: replyTo,
       media: extractMedia(messageEl),
       reactions: extractReactions(messageEl),
       message_subtype: "",
