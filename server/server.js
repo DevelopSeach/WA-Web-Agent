@@ -184,12 +184,177 @@ function findDuplicateCandidate(rows, message) {
   }) || null;
 }
 
+function buildComparableKey(messageLike) {
+  const shape = getComparableMessageShape(messageLike);
+  return JSON.stringify({
+    chat_title: shape.chat_title,
+    sender: shape.sender,
+    sent_at_text: shape.sent_at_text,
+    message_text: shape.message_text
+  });
+}
+
 function normalizeIncomingMessage(message) {
   const normalized = { ...message };
   const replyTo = normalizeReplyReference(normalized.reply_to);
   if (replyTo) normalized.reply_to = replyTo;
   normalized.text = getNormalizedMessageText(normalized);
   return normalized;
+}
+
+function rowToIncomingMessage(row) {
+  const raw = parseJsonMaybe(row.raw_json);
+  return normalizeIncomingMessage({
+    ...raw,
+    uid: row.message_uid,
+    event_type: row.event_type,
+    source: row.source,
+    chat_title: row.chat_title,
+    sender: row.sender,
+    direction: row.direction,
+    sent_at_text: row.sent_at_text,
+    captured_at: row.captured_at,
+    text: row.message_text
+  });
+}
+
+function getRowPreferenceScore(row) {
+  const raw = parseJsonMaybe(row.raw_json);
+  const uid = cleanText(row.message_uid || raw.uid || "");
+  const source = cleanText(row.source || raw.source || "");
+  const subtype = raw.message_subtype || "plain";
+  let score = 0;
+
+  if (uid && !uid.startsWith("synthetic-") && !uid.startsWith("sidebar-")) score += 100;
+  if (uid.startsWith("synthetic-")) score += 40;
+  if (uid.startsWith("sidebar-")) score += 10;
+  if (source === "whatsapp_web_extension_dom") score += 30;
+  if (source === "whatsapp_web_extension_sidebar") score += 5;
+  score += messageSubtypeRank(subtype) * 20;
+  if (hasReplyMetadata(raw)) score += 10;
+  if (hasReactionMetadata(raw)) score += 10;
+  if (Array.isArray(raw.media) && raw.media.length) score += 5;
+  score += Number(row.id || 0) / 1000000;
+
+  return score;
+}
+
+function chooseCanonicalRow(rows) {
+  return [...rows].sort((a, b) => getRowPreferenceScore(b) - getRowPreferenceScore(a))[0] || null;
+}
+
+function mergeRowsIntoCanonical(canonicalRow, duplicateRows) {
+  let merged = {
+    source: canonicalRow.source,
+    chat_title: canonicalRow.chat_title,
+    sender: canonicalRow.sender,
+    direction: canonicalRow.direction,
+    sent_at_text: canonicalRow.sent_at_text,
+    captured_at: canonicalRow.captured_at,
+    message_text: canonicalRow.message_text,
+    media_json: canonicalRow.media_json,
+    reactions_json: canonicalRow.reactions_json,
+    raw_json: canonicalRow.raw_json
+  };
+
+  for (const row of duplicateRows) {
+    merged = buildMergedMessage(
+      {
+        ...canonicalRow,
+        ...merged,
+        message_uid: canonicalRow.message_uid
+      },
+      rowToIncomingMessage(row)
+    );
+  }
+
+  return merged;
+}
+
+async function consolidateStoredDuplicates(rows) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = buildComparableKey(row);
+    const shape = getComparableMessageShape(row);
+    if (!shape.chat_title || !shape.message_text) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+
+  for (const groupRows of groups.values()) {
+    if (groupRows.length < 2) continue;
+
+    const canonical = chooseCanonicalRow(groupRows);
+    if (!canonical) continue;
+
+    const duplicates = groupRows.filter((row) => row.id !== canonical.id);
+    const merged = mergeRowsIntoCanonical(canonical, duplicates);
+
+    await pool.execute(
+      `UPDATE wa_messages
+       SET source = ?,
+           chat_title = ?,
+           sender = ?,
+           direction = ?,
+           sent_at_text = ?,
+           captured_at = ?,
+           message_text = ?,
+           media_json = CAST(? AS JSON),
+           reactions_json = CAST(? AS JSON),
+           raw_json = CAST(? AS JSON)
+       WHERE id = ?`,
+      [
+        merged.source,
+        merged.chat_title,
+        merged.sender,
+        merged.direction,
+        merged.sent_at_text,
+        new Date(merged.captured_at),
+        merged.message_text,
+        merged.media_json,
+        merged.reactions_json,
+        merged.raw_json,
+        canonical.id
+      ]
+    );
+
+    await pool.execute(
+      `DELETE FROM wa_messages WHERE id IN (${duplicates.map(() => "?").join(",")})`,
+      duplicates.map((row) => row.id)
+    );
+  }
+}
+
+function dedupeRowsForDisplay(rows) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = buildComparableKey(row);
+    const shape = getComparableMessageShape(row);
+    if (!shape.chat_title || !shape.message_text) {
+      groups.set(`__row_${row.id}`, [row]);
+      return;
+    }
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+
+  const deduped = [];
+  for (const groupRows of groups.values()) {
+    if (groupRows.length === 1) {
+      deduped.push(groupRows[0]);
+      continue;
+    }
+    const canonical = chooseCanonicalRow(groupRows);
+    if (!canonical) continue;
+    const duplicates = groupRows.filter((row) => row.id !== canonical.id);
+    const merged = mergeRowsIntoCanonical(canonical, duplicates);
+    deduped.push({
+      ...canonical,
+      ...merged
+    });
+  }
+
+  return deduped.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
 }
 
 function messageSubtypeRank(value) {
@@ -509,6 +674,23 @@ app.post("/api/whatsapp-webhook", requireToken, async (req, res) => {
     JSON.stringify(msg)
   ]);
 
+  if ((msg.event_type || "") === "message") {
+    const [recentRows] = await pool.execute(
+      `SELECT id, message_uid, event_type, source, chat_title, sender, direction, sent_at_text, captured_at, message_text, media_json, reactions_json, raw_json
+       FROM wa_messages
+       WHERE event_type = 'message'
+         AND COALESCE(chat_title, '') = COALESCE(?, '')
+         AND COALESCE(sender, '') = COALESCE(?, '')
+       ORDER BY id DESC
+       LIMIT 25`,
+      [
+        msg.chat_title || msg.payload?.title || null,
+        msg.sender || null
+      ]
+    );
+    await consolidateStoredDuplicates(recentRows);
+  }
+
   res.json({ ok: true, saved: true, uid: msg.uid });
 });
 
@@ -541,6 +723,7 @@ app.get("/api/messages", async (req, res) => {
 
   rows = await enrichRowsWithResolvedNames(rows);
   rows = rows.filter(shouldExposeRow);
+  rows = dedupeRowsForDisplay(rows);
   res.json({ ok: true, count: rows.length, messages: rows });
 });
 
