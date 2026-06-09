@@ -343,12 +343,16 @@ export default function App() {
                     <div key={`${message.id}-reaction-${index}`} style={styles.reactionItem}>
                       <span style={styles.reactionEmoji}>{Array.isArray(reaction.emojis) ? reaction.emojis.join(" ") : reaction.text}</span>
                       <span style={styles.reactionText}>
-                        {Array.isArray(reaction.actors) && reaction.actors.length ? reaction.actors.join(", ") : reaction.text}
+                        {Array.isArray(reaction.actors) && reaction.actors.length
+                          ? reaction.actors.join(", ")
+                          : reaction.sender_name || reaction.text}
                       </span>
                       {(reaction.sender_id || reaction.response_time) ? (
                         <span style={styles.reactionMeta}>
+                          {reaction.sender_name ? `מאת: ${reaction.sender_name}` : ""}
+                          {reaction.sender_name && reaction.sender_id ? " | " : ""}
                           {reaction.sender_id ? `ID: ${reaction.sender_id}` : ""}
-                          {reaction.sender_id && reaction.response_time ? " | " : ""}
+                          {(reaction.sender_name || reaction.sender_id) && reaction.response_time ? " | " : ""}
                           {reaction.response_time ? `זמן: ${reaction.response_time}` : ""}
                         </span>
                       ) : null}

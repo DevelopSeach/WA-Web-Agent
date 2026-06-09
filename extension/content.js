@@ -628,15 +628,18 @@
     return buildStringHash(prefix, parts).replace(`${prefix}-`, `${prefix}_`);
   }
 
-  function extractMedia(el) {
+  function extractMedia(el, context = {}) {
     const media = [];
     const seen = new Set();
+    const emojiPattern = /\p{Extended_Pictographic}/u;
     const pushMedia = (item) => {
       const key = stableJson({
         kind: item?.kind || "",
         src: item?.src || item?.href || "",
         alt: item?.alt || "",
-        text: item?.text || ""
+        text: item?.text || "",
+        sender_id: item?.sender_id || "",
+        response_time: item?.response_time || ""
       });
       if (seen.has(key)) return;
       seen.add(key);
@@ -644,12 +647,15 @@
     };
 
     el.querySelectorAll("img").forEach((img) => {
+      const alt = img.alt || "";
+      const isReactionEmoji = emojiPattern.test(alt);
       const item = {
         kind: "image",
         src: img.currentSrc || img.src || "",
-        alt: img.alt || "",
-        sender_id: null,
-        response_time: null,
+        alt,
+        sender_id: isReactionEmoji ? (context.sender_key || null) : null,
+        sender_name: isReactionEmoji ? (context.sender_name || null) : null,
+        response_time: isReactionEmoji ? (context.response_time || context.captured_at || null) : null,
         width: img.naturalWidth || img.width || null,
         height: img.naturalHeight || img.height || null
       };
@@ -675,7 +681,7 @@
     return media;
   }
 
-  function extractReactions(el) {
+  function extractReactions(el, context = {}) {
     const reactions = [];
     const seen = new Set();
     const nodes = [
@@ -697,18 +703,24 @@
       if (hebrewMatch?.[1]) actors.push(...hebrewMatch[1].split(/,|&|ו/).map((value) => cleanText(value)).filter(Boolean));
 
       const normalizedActors = [...new Set(actors)];
+      const senderName = normalizedActors.length === 1
+        ? normalizedActors[0]
+        : (context.sender_name || null);
       const senderId = normalizedActors.length === 1
         ? buildParticipantKey("sender", [normalizedActors[0], getCurrentChatTitle(), "reaction"])
-        : null;
+        : (context.sender_key || null);
       const responseTime = cleanText(node.getAttribute("data-testid") || "")
         .match(/\b\d{1,2}:\d{2}\b/)?.[0]
         || cleanText(node.getAttribute("aria-label") || "").match(/\b\d{1,2}:\d{2}\b/)?.[0]
+        || context.captured_at
+        || context.sent_at_text
         || null;
 
       const reaction = {
         text,
         emojis,
         actors: normalizedActors,
+        sender_name: senderName,
         sender_id: senderId,
         response_time: responseTime
       };
@@ -717,6 +729,7 @@
         text: reaction.text,
         emojis: reaction.emojis,
         actors: reaction.actors,
+        sender_name: reaction.sender_name,
         sender_id: reaction.sender_id,
         response_time: reaction.response_time
       });
@@ -864,6 +877,10 @@
 
     const replyTo = extractReplyContext(messageEl);
     const bodyText = stripReplyPrefix(inferredMeta.body || rawText, replyTo);
+    const capturedAt = new Date().toISOString();
+    const senderKey = senderPhone || buildParticipantKey("sender", [fallbackName || effectiveChatTitle || currentChatTitle, targetType]);
+    const senderName = parsed.sender || inferredMeta.sender || effectiveChatTitle || currentChatTitle || null;
+    const sentAtText = parsed.sent_at_text || inferredMeta.sent_at_text;
 
     const record = {
       event_type: "message",
@@ -882,17 +899,27 @@
       target_type: targetType,
       sender: parsed.sender || inferredMeta.sender || null,
       sender_phone: senderPhone,
-      sender_key: senderPhone || buildParticipantKey("sender", [fallbackName || effectiveChatTitle || currentChatTitle, targetType]),
-      sent_at_text: parsed.sent_at_text || inferredMeta.sent_at_text,
+      sender_key: senderKey,
+      sent_at_text: sentAtText,
       direction: inferredDirection,
       text: bodyText,
       ack: extractAck(messageEl),
       reply_to: replyTo,
-      media: extractMedia(messageEl),
-      reactions: extractReactions(messageEl),
+      media: extractMedia(messageEl, {
+        sender_key: senderKey,
+        sender_name: senderName,
+        response_time: sentAtText,
+        captured_at: capturedAt
+      }),
+      reactions: extractReactions(messageEl, {
+        sender_key: senderKey,
+        sender_name: senderName,
+        sent_at_text: sentAtText,
+        captured_at: capturedAt
+      }),
       message_subtype: "",
       page_url: location.href,
-      captured_at: new Date().toISOString()
+      captured_at: capturedAt
     };
 
     record.message_subtype = buildMessageSubtype(record);
