@@ -149,6 +149,8 @@
   }
 
   function getCurrentChatTitle() {
+    const composeTarget = extractComposeTargetName();
+    if (composeTarget) return composeTarget;
     const header = deepQueryAll("header")[0];
     if (!header) return "";
     const titledNodes = [...header.querySelectorAll("span[title], [title], [aria-label]")];
@@ -327,6 +329,7 @@
     const text = cleanText(value).toLowerCase();
     if (!text) return true;
     const exact = [
+      "tools",
       "chats",
       "channels",
       "channel",
@@ -341,6 +344,7 @@
     return (
       text.includes("updates in status") ||
       text.includes("whatsapp business") ||
+      text.includes("tools") ||
       text.includes("communities") ||
       text.includes("archived") ||
       text.includes("favorites") ||
@@ -368,6 +372,8 @@
   }
 
   function extractTargetName() {
+    const composeTarget = extractComposeTargetName();
+    if (composeTarget) return composeTarget;
     const header = deepQueryAll("header")[0];
     if (!header) return "";
 
@@ -384,6 +390,37 @@
 
     const title = getCurrentChatTitle();
     return isGenericTargetName(title) ? "" : title;
+  }
+
+  function extractComposeTargetName() {
+    const box = findMessageBox();
+    if (!box) return "";
+    const samples = [
+      box.getAttribute("aria-label"),
+      box.getAttribute("title"),
+      box.getAttribute("placeholder")
+    ]
+      .map((value) => cleanText(value))
+      .filter(Boolean);
+
+    const patterns = [
+      /type a message to\s+(.+)$/i,
+      /send a message to\s+(.+)$/i,
+      /message\s+(.+)$/i,
+      /כתוב הודעה אל\s+(.+)$/i,
+      /הקלד הודעה אל\s+(.+)$/i
+    ];
+
+    for (const sample of samples) {
+      for (const pattern of patterns) {
+        const match = sample.match(pattern);
+        if (!match?.[1]) continue;
+        const value = cleanText(match[1]);
+        if (value && !isGenericTargetName(value)) return value;
+      }
+    }
+
+    return "";
   }
 
   function isSavedContactName(value) {
