@@ -223,6 +223,21 @@ function isDebugEventRow(row) {
   return source.includes("debug") || source.includes("page_hook") || source.includes("store");
 }
 
+function formatDebugRowAsText(row) {
+  const raw = parseJsonMaybe(row.raw_json);
+  return [
+    `#${row.id} ${row.event_type || "-"} ${row.source || "-"}`,
+    `created_at: ${row.created_at || "-"}`,
+    `captured_at: ${row.captured_at || raw.captured_at || "-"}`,
+    `chat_title: ${row.chat_title || raw.chat_title || "-"}`,
+    `sender: ${row.sender || raw.sender || "-"}`,
+    `text: ${row.message_text || raw.text || "-"}`,
+    `payload:`,
+    JSON.stringify(raw.payload || raw, null, 2),
+    ""
+  ].join("\n");
+}
+
 async function enrichRowsWithResolvedNames(rows) {
   const needPhones = new Set();
   const enrichedRows = rows.map((row) => {
@@ -426,6 +441,17 @@ app.get("/api/domdebug", async (req, res) => {
   const enriched = await enrichRowsWithResolvedNames(rows);
   const debugRows = enriched.filter(isDebugEventRow);
   res.json({ ok: true, count: debugRows.length, messages: debugRows });
+});
+
+app.get("/api/domdebug/export", async (req, res) => {
+  const parsedLimit = Number(req.query.limit || 200);
+  const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 2000)) : 200;
+  const [rows] = await pool.execute(`SELECT * FROM wa_messages ORDER BY id DESC LIMIT ${limit}`);
+  const enriched = await enrichRowsWithResolvedNames(rows);
+  const debugRows = enriched.filter(isDebugEventRow);
+  const output = debugRows.map(formatDebugRowAsText).join("\n====================\n\n");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.send(output || "No debug rows");
 });
 
 app.get("/api/messages/export", requireToken, async (req, res) => {

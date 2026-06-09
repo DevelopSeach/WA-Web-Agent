@@ -893,6 +893,7 @@
     const body = stripUnreadNoise(meta.body || snippetCandidate || fallbackBody || "");
     if (isWeakSidebarBody(body, title, timeCandidate)) return null;
     if (isMostlyNumeric(title) && !timeCandidate && isMostlyNumeric(body) && body.length <= 2) return null;
+    if (!timeCandidate && body.length <= 2 && isMostlyNumeric(body) && !isMostlyNumeric(title) && hasLetters(title)) return null;
     if (isNoisySystemText(body)) return null;
     if (singleLineMeta?.sender && isNoisySystemText(singleLineMeta.sender)) return null;
     if (!rawTitle && !singleLineMeta?.time && !timeCandidate) return null;
@@ -1025,6 +1026,11 @@
   function emitDomDebugSnapshot(reason = "manual") {
     try {
       const chatRoots = getChatRoots();
+      const mainTextSample = chatRoots
+        .map((root) => cleanText(root.innerText || root.textContent || ""))
+        .filter(Boolean)
+        .join("\n---\n")
+        .slice(0, 8000);
       const conversationSamples = deepQueryAll("[data-id], [data-pre-plain-text], .copyable-text, [data-testid*='msg'], [data-testid*='msg-container'], .message-in, .message-out", document.body)
         .slice(0, 15)
         .map((node) => cleanText(node.innerText || node.textContent || ""))
@@ -1046,6 +1052,8 @@
           title: document.title,
           current_chat_title: getCurrentChatTitle(),
           header_text: getHeaderText(),
+          body_text_sample: cleanText(document.body?.innerText || "").slice(0, 12000),
+          main_text_sample: mainTextSample,
           chat_roots_found: chatRoots.length,
           sidebar_root_found: !!getSidebarRoot(),
           conversation_samples: conversationSamples,
