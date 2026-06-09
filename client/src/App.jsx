@@ -536,7 +536,7 @@ function getCommandStatusColor(status) {
 
 function getRenderableMedia(message) {
   const media = Array.isArray(message?.media_json) ? message.media_json : [];
-  return media.filter((item) => {
+  const filtered = media.filter((item) => {
     const kind = String(item?.kind || "").trim().toLowerCase();
     const src = String(item?.src || item?.href || "").trim();
     if (!src) return false;
@@ -548,6 +548,23 @@ function getRenderableMedia(message) {
     }
     return kind === "video" || kind === "audio" || kind === "link";
   });
+
+  const seen = new Set();
+  return filtered
+    .slice()
+    .sort((a, b) => getMediaPriority(b) - getMediaPriority(a))
+    .filter((item) => {
+      const key = JSON.stringify({
+        kind: item?.kind || "",
+        alt: item?.alt || "",
+        width: Number(item?.width || 0),
+        height: Number(item?.height || 0),
+        src: String(item?.src || "").slice(0, 120)
+      });
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function getMediaLabel(media, index) {
@@ -556,6 +573,17 @@ function getMediaLabel(media, index) {
   if (kind === "audio") return `אודיו ${index + 1}`;
   if (kind === "link") return media.text || media.src || `קישור ${index + 1}`;
   return media.text || media.src || `מדיה ${index + 1}`;
+}
+
+function getMediaPriority(media) {
+  const kind = String(media?.kind || "").trim().toLowerCase();
+  if (kind !== "image") return 0;
+  const width = Number(media?.width || 0);
+  const height = Number(media?.height || 0);
+  const area = width * height;
+  const src = String(media?.src || "").trim();
+  const sourceBonus = src.startsWith("data:image/") ? 1_000_000_000 : 0;
+  return sourceBonus + area;
 }
 
 const styles = {
@@ -616,7 +644,7 @@ const styles = {
   messageBody: { whiteSpace: "pre-wrap", fontSize: 16, lineHeight: 1.7, marginBottom: 10 },
   mediaStrip: { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 },
   mediaLink: { display: "inline-flex", textDecoration: "none" },
-  mediaThumb: { width: 112, height: 112, objectFit: "cover", borderRadius: 12, border: "1px solid #d1d5db", background: "#f3f4f6" },
+  mediaThumb: { width: 220, height: 220, objectFit: "contain", borderRadius: 12, border: "1px solid #d1d5db", background: "#f3f4f6" },
   mediaFallback: {
     display: "inline-flex",
     alignItems: "center",

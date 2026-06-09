@@ -628,6 +628,32 @@
     return buildStringHash(prefix, parts).replace(`${prefix}-`, `${prefix}_`);
   }
 
+  function captureImagePreview(img) {
+    if (!img) return "";
+    const width = Number(img.naturalWidth || img.width || 0);
+    const height = Number(img.naturalHeight || img.height || 0);
+    const source = img.currentSrc || img.src || "";
+    if (!source) return "";
+    if (source.startsWith("data:image/")) return source;
+    if (!width || !height) return source;
+
+    try {
+      const maxDimension = 960;
+      const scale = Math.min(1, maxDimension / Math.max(width, height));
+      const targetWidth = Math.max(1, Math.round(width * scale));
+      const targetHeight = Math.max(1, Math.round(height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const context = canvas.getContext("2d");
+      if (!context) return source;
+      context.drawImage(img, 0, 0, targetWidth, targetHeight);
+      return canvas.toDataURL("image/jpeg", 0.86) || source;
+    } catch {
+      return source;
+    }
+  }
+
   function extractMedia(el, context = {}) {
     const media = [];
     const seen = new Set();
@@ -649,9 +675,11 @@
     el.querySelectorAll("img").forEach((img) => {
       const alt = img.alt || "";
       const isReactionEmoji = emojiPattern.test(alt);
+      const previewSrc = captureImagePreview(img);
       const item = {
         kind: "image",
-        src: img.currentSrc || img.src || "",
+        src: previewSrc || img.currentSrc || img.src || "",
+        original_src: img.currentSrc || img.src || "",
         alt,
         sender_id: isReactionEmoji ? (context.sender_key || null) : null,
         sender_name: isReactionEmoji ? (context.sender_name || null) : null,
