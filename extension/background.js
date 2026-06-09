@@ -8,6 +8,12 @@ const DEFAULT_CONFIG = {
   pollSeconds: 3
 };
 
+function sanitizeUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.replace(/^url:\s*/i, "").trim();
+}
+
 async function loadRuntimeDefaults() {
   try {
     const res = await fetch(chrome.runtime.getURL("runtime-config.json"));
@@ -21,9 +27,9 @@ async function loadRuntimeDefaults() {
 function mergeConfig(runtime = {}) {
   return {
     ...DEFAULT_CONFIG,
-    webhookUrl: runtime.webhookUrl || DEFAULT_CONFIG.webhookUrl,
-    commandUrl: runtime.commandUrl || DEFAULT_CONFIG.commandUrl,
-    commandResultUrl: runtime.commandResultUrl || DEFAULT_CONFIG.commandResultUrl,
+    webhookUrl: sanitizeUrl(runtime.webhookUrl || DEFAULT_CONFIG.webhookUrl),
+    commandUrl: sanitizeUrl(runtime.commandUrl || DEFAULT_CONFIG.commandUrl),
+    commandResultUrl: sanitizeUrl(runtime.commandResultUrl || DEFAULT_CONFIG.commandResultUrl),
     apiToken: runtime.apiToken || DEFAULT_CONFIG.apiToken,
     enabled: runtime.enabled !== false,
     pollCommands: runtime.pollCommands !== false,
@@ -50,7 +56,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function config() {
   const defaults = await runtimeDefaultsPromise;
   const cfg = await chrome.storage.local.get(Object.keys(defaults));
-  return { ...defaults, ...cfg };
+  return {
+    ...defaults,
+    ...cfg,
+    webhookUrl: sanitizeUrl(cfg.webhookUrl ?? defaults.webhookUrl),
+    commandUrl: sanitizeUrl(cfg.commandUrl ?? defaults.commandUrl),
+    commandResultUrl: sanitizeUrl(cfg.commandResultUrl ?? defaults.commandResultUrl)
+  };
 }
 
 async function getWhatsAppTab() {
@@ -325,7 +337,13 @@ async function pollCommands() {
   try {
     const res = await fetch(cfg.commandUrl, { headers: { "x-api-token": cfg.apiToken } });
     if (!res.ok) return;
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      throw new Error(`Command URL did not return JSON. First bytes: ${text.slice(0, 80)}`);
+    }
     if (!data.command) return;
 
     let result;

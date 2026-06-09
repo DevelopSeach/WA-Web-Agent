@@ -11,15 +11,19 @@ const ids = Object.keys(FALLBACKS);
 const els = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 const statusEl = document.getElementById("status");
 
+function sanitizeUrl(value) {
+  return String(value || "").trim().replace(/^url:\s*/i, "").trim();
+}
+
 async function loadRuntimeDefaults() {
   try {
     const res = await fetch(chrome.runtime.getURL("runtime-config.json"));
     if (!res.ok) return {};
     const runtime = await res.json();
     return {
-      webhookUrl: runtime.webhookUrl || FALLBACKS.webhookUrl,
-      commandUrl: runtime.commandUrl || FALLBACKS.commandUrl,
-      commandResultUrl: runtime.commandResultUrl || FALLBACKS.commandResultUrl,
+      webhookUrl: sanitizeUrl(runtime.webhookUrl || FALLBACKS.webhookUrl),
+      commandUrl: sanitizeUrl(runtime.commandUrl || FALLBACKS.commandUrl),
+      commandResultUrl: sanitizeUrl(runtime.commandResultUrl || FALLBACKS.commandResultUrl),
       apiToken: runtime.apiToken || FALLBACKS.apiToken,
       enabled: runtime.enabled !== false,
       pollCommands: runtime.pollCommands !== false
@@ -38,7 +42,7 @@ function applyConfig(cfg) {
 
 document.getElementById("save").addEventListener("click", async () => {
   const data = {};
-  for (const id of ids) data[id] = els[id].type === "checkbox" ? els[id].checked : els[id].value.trim();
+  for (const id of ids) data[id] = els[id].type === "checkbox" ? els[id].checked : sanitizeUrl(els[id].value);
   await chrome.storage.local.set(data);
   statusEl.textContent = "נשמר בהצלחה";
   setTimeout(() => (statusEl.textContent = ""), 2000);
