@@ -312,6 +312,33 @@ export default function App() {
                 </div>
               </div>
               <div style={styles.messageBody}>{message.message_text || "(ללא טקסט)"}</div>
+              {getRenderableMedia(message).length ? (
+                <div style={styles.mediaStrip}>
+                  {getRenderableMedia(message).map((media, index) => (
+                    media.kind === "image" ? (
+                      <a
+                        key={`${message.id}-media-${index}`}
+                        href={media.src}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={styles.mediaLink}
+                      >
+                        <img src={media.src} alt={media.alt || "media"} style={styles.mediaThumb} loading="lazy" />
+                      </a>
+                    ) : (
+                      <a
+                        key={`${message.id}-media-${index}`}
+                        href={media.src}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={styles.mediaFallback}
+                      >
+                        {getMediaLabel(media, index)}
+                      </a>
+                    )
+                  ))}
+                </div>
+              ) : null}
               <div style={styles.metaChips}>
                 <span style={styles.chip}>סוג: {message.event_type || "-"}</span>
                 {message.raw_json?.message_subtype && message.raw_json.message_subtype !== "plain" ? (
@@ -507,6 +534,30 @@ function getCommandStatusColor(status) {
   return "#e5e7eb";
 }
 
+function getRenderableMedia(message) {
+  const media = Array.isArray(message?.media_json) ? message.media_json : [];
+  return media.filter((item) => {
+    const kind = String(item?.kind || "").trim().toLowerCase();
+    const src = String(item?.src || item?.href || "").trim();
+    if (!src) return false;
+    if (kind === "image") {
+      const width = Number(item?.width || 0);
+      const height = Number(item?.height || 0);
+      if (width > 0 && width <= 4 && height > 0 && height <= 4) return false;
+      return src.startsWith("data:image/") || src.startsWith("blob:") || /^https?:\/\//i.test(src);
+    }
+    return kind === "video" || kind === "audio" || kind === "link";
+  });
+}
+
+function getMediaLabel(media, index) {
+  const kind = String(media?.kind || "").trim().toLowerCase();
+  if (kind === "video") return `וידאו ${index + 1}`;
+  if (kind === "audio") return `אודיו ${index + 1}`;
+  if (kind === "link") return media.text || media.src || `קישור ${index + 1}`;
+  return media.text || media.src || `מדיה ${index + 1}`;
+}
+
 const styles = {
   page: {
     fontFamily: "'Segoe UI', sans-serif",
@@ -563,6 +614,20 @@ const styles = {
   directionBadge: { padding: "6px 10px", borderRadius: 999, fontSize: 13, fontWeight: 800, color: "#111827" },
   timestamp: { color: "#6b7280", fontSize: 13 },
   messageBody: { whiteSpace: "pre-wrap", fontSize: 16, lineHeight: 1.7, marginBottom: 10 },
+  mediaStrip: { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 },
+  mediaLink: { display: "inline-flex", textDecoration: "none" },
+  mediaThumb: { width: 112, height: 112, objectFit: "cover", borderRadius: 12, border: "1px solid #d1d5db", background: "#f3f4f6" },
+  mediaFallback: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #d1d5db",
+    background: "#f9fafb",
+    color: "#1d4ed8",
+    textDecoration: "none",
+    fontSize: 13
+  },
   metaChips: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 },
   chip: { background: "#f3f4f6", borderRadius: 999, padding: "6px 10px", fontSize: 13, color: "#374151" },
   commandStatus: { padding: "6px 10px", borderRadius: 999, fontSize: 13, fontWeight: 800, color: "#111827" },

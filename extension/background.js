@@ -307,11 +307,35 @@ async function executeCommand(command) {
 
     case "paste_image":
       await sendContentCommand(tabId, { action: "focus_message_box" });
-      return await sendToNative({ action: "paste_image", filePath: command.filePath, caption: command.caption || "", send: command.send !== false });
+      {
+        const result = await sendToNative({
+          action: "paste_image",
+          filePath: command.filePath,
+          caption: command.caption || "",
+          send: command.send !== false
+        });
+        if (result?.ok && command.send !== false) {
+          await sleep(1800);
+          await captureRecentMessages(tabId, 8, 500);
+        }
+        return result;
+      }
 
     case "paste_file":
       await sendContentCommand(tabId, { action: "focus_message_box" });
-      return await sendToNative({ action: "paste_file", filePath: command.filePath, caption: command.caption || "", send: command.send !== false });
+      {
+        const result = await sendToNative({
+          action: "paste_file",
+          filePath: command.filePath,
+          caption: command.caption || "",
+          send: command.send !== false
+        });
+        if (result?.ok && command.send !== false) {
+          await sleep(1800);
+          await captureRecentMessages(tabId, 8, 500);
+        }
+        return result;
+      }
 
     case "native":
       return await sendToNative(command.payload || {});
