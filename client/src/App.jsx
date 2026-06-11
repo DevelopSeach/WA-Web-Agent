@@ -611,7 +611,9 @@ function getOpenableMediaTargets(message) {
   const seen = new Set();
   return media.flatMap((item, index) => {
     const uploadedUrl = cleanMediaUrl(
-      item?.uploaded_url
+      item?.mega_url
+      || item?.uploaded_url
+      || item?.upload?.mega_url
       || item?.upload?.media_url
       || item?.upload?.public_url
       || item?.upload?.location

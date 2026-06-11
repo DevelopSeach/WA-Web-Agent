@@ -136,14 +136,57 @@ function parseDataUrl(value) {
   };
 }
 
+function isWebUrl(value) {
+  return /^https?:\/\//i.test(String(value || "").trim());
+}
+
+function isMegaUrl(value) {
+  const url = String(value || "").trim().toLowerCase();
+  return url.startsWith("https://mega.nz/")
+    || url.startsWith("https://mega.co.nz/")
+    || url.startsWith("mega://");
+}
+
+function selectUploadedMediaUrl(response = {}) {
+  const candidates = [
+    response.public_url,
+    response.location,
+    response.url,
+    response.download_url,
+    response.stored_path
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+
+  const megaCandidate = candidates.find((value) => isMegaUrl(value));
+  if (megaCandidate) return megaCandidate;
+
+  const webCandidate = candidates.find((value) => isWebUrl(value));
+  if (webCandidate) return webCandidate;
+
+  return candidates[0] || null;
+}
+
 function normalizeUploadedMediaResponse(payload) {
   const response = payload && typeof payload === "object" ? payload : {};
+  const storageType = String(response.storage_type || "").trim().toLowerCase() || null;
+  const mediaUrl = selectUploadedMediaUrl(response);
+  const megaUrl = [
+    response.location,
+    response.public_url,
+    response.url,
+    response.download_url
+  ].map((value) => String(value || "").trim()).find((value) => isMegaUrl(value)) || null;
+
   return {
-    storage_type: response.storage_type || null,
+    storage_type: storageType,
     stored_path: response.stored_path || null,
     public_url: response.public_url || null,
     location: response.location || null,
-    media_url: response.public_url || response.location || response.stored_path || null
+    url: response.url || null,
+    download_url: response.download_url || null,
+    mega_url: megaUrl || (storageType === "mega" ? mediaUrl : null),
+    media_url: storageType === "mega"
+      ? (megaUrl || mediaUrl || null)
+      : (mediaUrl || null)
   };
 }
 
@@ -219,7 +262,8 @@ async function uploadMediaItem(item, context = {}) {
   return {
     ...item,
     upload: normalized,
-    uploaded_url: normalized.media_url
+    uploaded_url: normalized.media_url,
+    mega_url: normalized.mega_url || null
   };
 }
 
