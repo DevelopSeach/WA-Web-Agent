@@ -616,6 +616,7 @@ function getOpenableMediaTargets(message) {
       || item?.upload?.mega_url
       || item?.upload?.media_url
       || item?.upload?.public_url
+      || item?.upload?.download_url
       || item?.upload?.location
     );
     const fallbackUrl = cleanHttpMediaUrl(item?.src || item?.href || item?.original_src);

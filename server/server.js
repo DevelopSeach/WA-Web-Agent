@@ -201,7 +201,15 @@ async function uploadMediaItem(item, context = {}) {
   const source = String(item?.src || item?.href || item?.original_src || "").trim();
   if (!source) return item;
 
-  const existingUrl = cleanText(item?.uploaded_url || item?.upload?.media_url || item?.upload?.public_url || item?.upload?.location);
+  const existingUrl = cleanText(
+    item?.uploaded_url
+    || item?.mega_url
+    || item?.upload?.mega_url
+    || item?.upload?.media_url
+    || item?.upload?.public_url
+    || item?.upload?.download_url
+    || item?.upload?.location
+  );
   if (existingUrl) return item;
 
   if (source.startsWith("blob:")) {
