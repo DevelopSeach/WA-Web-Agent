@@ -618,7 +618,7 @@ function getOpenableMediaTargets(message) {
       || item?.upload?.public_url
       || item?.upload?.location
     );
-    const fallbackUrl = cleanMediaUrl(item?.src || item?.href || item?.original_src);
+    const fallbackUrl = cleanHttpMediaUrl(item?.src || item?.href || item?.original_src);
     const targetUrl = uploadedUrl || fallbackUrl;
     if (!targetUrl) return [];
     if (seen.has(targetUrl)) return [];
@@ -634,9 +634,13 @@ function cleanMediaUrl(value) {
   const url = String(value || "").trim();
   if (!url) return "";
   if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith("data:")) return url;
-  if (url.startsWith("blob:")) return url;
   return "";
+}
+
+function cleanHttpMediaUrl(value) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  return /^https?:\/\//i.test(url) ? url : "";
 }
 
 const styles = {
